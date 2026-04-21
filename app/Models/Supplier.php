@@ -3,32 +3,33 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Supplier extends Model
 {
-    protected $table = 'suppliers';
-
-    public $timestamps = false;
-
     protected $fillable = [
+        'branch_id',
         'name',
+        'code',
         'phone',
+        'email',
+        'address',
+        'notes',
+        'account_id',
+        'is_active',
         'is_deleted',
         'is_locked',
     ];
 
     protected $casts = [
+        'branch_id' => 'integer',
+        'account_id' => 'integer',
+        'is_active' => 'boolean',
         'is_deleted' => 'boolean',
         'is_locked' => 'boolean',
     ];
 
-    public function purchaseInvoices()
-    {
-        return $this->hasMany(PurchaseInvoice::class, 'supplier_id');
-    }
-
-    public function supplierPayments()
-    {
-        return $this->hasMany(SupplierPayment::class, 'supplier_id');
-    }
+    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
+    public function purchaseInvoices(): HasMany { return $this->hasMany(PurchaseInvoice::class); }
 }

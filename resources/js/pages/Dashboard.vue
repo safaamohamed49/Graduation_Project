@@ -49,9 +49,8 @@ const statCards = (stats) => [
 </script>
 
 <template>
-  <MainLayout>
+  <MainLayout title="لوحة التحكم">
     <div class="space-y-8">
-      <!-- Hero -->
       <section class="relative overflow-hidden rounded-[28px] bg-slate-950 p-8 text-white shadow-2xl">
         <div class="absolute inset-0">
           <div class="absolute -top-16 -right-16 h-56 w-56 rounded-full bg-blue-500/20 blur-3xl"></div>
@@ -101,13 +100,10 @@ const statCards = (stats) => [
         </div>
       </section>
 
-      <!-- Stats -->
       <section>
-        <div class="mb-5 flex items-center justify-between">
-          <div>
-            <h2 class="text-2xl font-black text-slate-800">الإحصائيات الرئيسية</h2>
-            <p class="mt-1 text-sm text-slate-500">ملخص سريع لأهم بيانات المنظومة</p>
-          </div>
+        <div class="mb-5">
+          <h2 class="text-2xl font-black text-slate-800">الإحصائيات الرئيسية</h2>
+          <p class="mt-1 text-sm text-slate-500">ملخص سريع لأهم بيانات المنظومة</p>
         </div>
 
         <div class="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
@@ -127,9 +123,7 @@ const statCards = (stats) => [
                 {{ card.icon }}
               </div>
 
-              <div
-                class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500"
-              >
+              <div class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
                 ملخص
               </div>
             </div>
@@ -141,65 +135,6 @@ const statCards = (stats) => [
             <p class="mt-3 text-sm leading-6 text-slate-500">
               {{ card.subtitle }}
             </p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Quick actions -->
-      <section class="grid gap-6 xl:grid-cols-3">
-        <div class="rounded-[24px] bg-white p-6 shadow-sm ring-1 ring-slate-200/70 xl:col-span-2">
-          <h3 class="text-xl font-black text-slate-800">نظرة عامة</h3>
-          <p class="mt-2 text-sm leading-7 text-slate-500">
-            الواجهة الحالية مجهزة كبداية احترافية للمنظومة، وتقدري من بعدها تبني صفحات:
-            المنتجات، العملاء، الموردين، الفواتير، والتقارير بنفس نفس التصميم.
-          </p>
-
-          <div class="mt-6 grid gap-4 md:grid-cols-3">
-            <div class="rounded-2xl bg-slate-50 p-4">
-              <p class="text-sm font-semibold text-slate-700">المنتجات</p>
-              <p class="mt-2 text-xs leading-6 text-slate-500">
-                إدارة الأصناف، الأكواد، الأسعار، والتصنيفات.
-              </p>
-            </div>
-
-            <div class="rounded-2xl bg-slate-50 p-4">
-              <p class="text-sm font-semibold text-slate-700">العملاء</p>
-              <p class="mt-2 text-xs leading-6 text-slate-500">
-                متابعة الحسابات والبيانات وسجل التعاملات.
-              </p>
-            </div>
-
-            <div class="rounded-2xl bg-slate-50 p-4">
-              <p class="text-sm font-semibold text-slate-700">التقارير</p>
-              <p class="mt-2 text-xs leading-6 text-slate-500">
-                استخراج مؤشرات ورسوم وإحصائيات دقيقة.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="rounded-[24px] bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white shadow-xl">
-          <h3 class="text-xl font-black">جاهزية المشروع</h3>
-          <p class="mt-3 text-sm leading-7 text-slate-300">
-            المنظومة تشتغل الآن بهيكل حديث يسمح بتطوير كل الصفحات بنفس القالب والأسلوب
-            بدون الرجوع لتصميم تقليدي.
-          </p>
-
-          <div class="mt-6 space-y-3">
-            <div class="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
-              <span class="text-sm text-slate-300">تسجيل الدخول</span>
-              <span class="font-bold text-emerald-400">مكتمل</span>
-            </div>
-
-            <div class="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
-              <span class="text-sm text-slate-300">لوحة التحكم</span>
-              <span class="font-bold text-blue-300">جاهزة</span>
-            </div>
-
-            <div class="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
-              <span class="text-sm text-slate-300">الواجهة الحديثة</span>
-              <span class="font-bold text-violet-300">Vue</span>
-            </div>
           </div>
         </div>
       </section>

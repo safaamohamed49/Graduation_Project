@@ -1,0 +1,1100 @@
+==================================================
+TABLE: branches (الفروع)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- name → اسم الفرع
+- code → رمز الفرع (فريد)
+- address → العنوان
+- phone → الهاتف
+- manager_user_id → مدير الفرع (سيُربط لاحقًا بـ users)
+- is_active → هل الفرع فعال
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- branches → hasMany → warehouses
+- branches → hasMany → users
+- branches → hasMany → employees
+- branches → hasMany → customers
+- branches → hasMany → suppliers
+- branches → hasMany → orders
+- branches → hasMany → purchase_invoices
+- branches → hasMany → return_invoices
+- branches → hasMany → payment_vouchers
+- branches → hasMany → receipt_vouchers
+- branches → hasMany → journal_entries
+- branches → hasMany → financial_accounts
+- branches → hasMany → fixed_assets
+
+PENDING FK:
+- manager_user_id → users.id
+
+NOTES:
+- أول فرع يكون MAIN
+- كل النظام مربوط بالفروع
+
+
+==================================================
+TABLE: warehouses (المخازن)
+==================================================
+
+COLUMNS:
+- id → المعرف
+- branch_id → الفرع (nullable)
+- name → اسم المخزن
+- code → رمز المخزن (فريد)
+- type → نوع المخزن (main / branch / temporary)
+- address → العنوان
+- phone → الهاتف
+- is_active → هل فعال
+- created_at / updated_at
+
+RELATIONS:
+- warehouses → belongsTo → branches
+- warehouses → hasMany → inventory_batches
+- warehouses → hasMany → purchase_invoices
+- warehouses → hasMany → return_invoices
+- warehouses → hasMany → stock_transfers (outgoing)
+- warehouses → hasMany → stock_transfers (incoming)
+
+FOREIGN KEYS:
+- branch_id → branches.id
+
+NOTES:
+- ممكن مخزن رئيسي بدون فرع
+- كل المخزون مربوط بمخزن
+
+
+==================================================
+TABLE: partners (الشركاء)
+==================================================
+
+COLUMNS:
+- id → المعرف
+- name → اسم الشريك
+- phone → الهاتف
+- email → البريد
+- address → العنوان
+- capital_amount → رأس المال
+- ownership_percentage → نسبة الملكية
+- capital_account_id → حساب رأس المال (لاحقًا)
+- current_account_id → الحساب الجاري (لاحقًا)
+- start_date → بداية الشراكة
+- is_active → هل نشط
+- notes → ملاحظات
+- created_at / updated_at
+
+RELATIONS:
+- partners → hasMany → payment_vouchers
+- partners → hasMany → receipt_vouchers
+
+PENDING FK:
+- capital_account_id → accounts.id
+- current_account_id → accounts.id
+
+NOTES:
+- لكل شريك حساب رأس مال
+- ولكل شريك حساب جاري للسحوبات
+
+
+==================================================
+TABLE: employees (الموظفون)
+==================================================
+
+COLUMNS:
+- id → المعرف
+- branch_id → الفرع
+- name → اسم الموظف
+- phone → الهاتف
+- email → البريد
+- address → العنوان
+- salary → الراتب
+- account_id → حساب الموظف (لاحقًا)
+- hire_date → تاريخ التوظيف
+- is_active → هل نشط
+- notes → ملاحظات
+- created_at / updated_at
+
+RELATIONS:
+- employees → belongsTo → branches
+
+FOREIGN KEYS:
+- branch_id → branches.id
+
+PENDING FK:
+- account_id → accounts.id
+
+NOTES:
+- الراتب هنا معلومات فقط
+- الصرف يتم عبر payment_vouchers
+
+
+==================================================
+TABLE: accounts (شجرة الحسابات)
+==================================================
+
+COLUMNS:
+- id → المعرف
+- parent_id → الحساب الأب
+- code → كود الحساب (فريد)
+- name → اسم الحساب
+- type → نوع الحساب (asset / liability / equity / revenue / expense)
+- nature → طبيعة الحساب (debit / credit)
+- level → مستوى الحساب
+- is_group → هل تجميعي
+- is_active → هل فعال
+- is_system → نظامي
+- notes → ملاحظات
+- created_at / updated_at
+
+RELATIONS:
+- accounts → belongsTo → parent (accounts)
+- accounts → hasMany → children (accounts)
+- accounts → hasMany → journal_entry_lines
+
+FOREIGN KEYS:
+- parent_id → accounts.id
+
+NOTES:
+- هذا أهم جدول في النظام
+- كل المحاسبة تعتمد عليه
+
+
+==================================================
+PENDING RELATIONS (المؤجلة)
+==================================================
+
+- branches.manager_user_id → users.id
+- partners.capital_account_id → accounts.id
+- partners.current_account_id → accounts.id
+- employees.account_id → accounts.id
+
+
+==================================================
+SYSTEM NOTES
+==================================================
+
+- النظام متعدد الفروع
+- النظام متعدد المخازن
+- النظام يدعم شركاء
+- النظام محاسبي كامل
+
+- لا يوجد جدول مصروفات مباشر
+- المصروف يتم عبر:
+  expense_categories + payment_vouchers + journal_entries
+
+- كل شيء مرتبط بشجرة الحسابات
+
+==================================================
+TABLE: financial_accounts (الخزائن والبنوك)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- branch_id → الفرع التابع له الحساب المالي
+- name → اسم الحساب (مثال: صندوق الفرع الرئيسي / بنك الجمهورية)
+- code → رمز الحساب (فريد)
+- type → نوع الحساب (cash / bank)
+- account_id → الحساب المحاسبي المرتبط (accounts)
+- currency → العملة (افتراضي LYD)
+- opening_balance → الرصيد الافتتاحي
+- is_active → هل الحساب فعال
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- financial_accounts → belongsTo → branches
+- financial_accounts → belongsTo → accounts
+- financial_accounts → hasMany → payment_vouchers
+- financial_accounts → hasMany → receipt_vouchers
+
+FOREIGN KEYS:
+- branch_id → branches.id
+
+PENDING FK:
+- account_id → accounts.id
+
+NOTES:
+- هذا الجدول يمثل:
+  - الصندوق (cash)
+  - البنك (bank)
+
+- كل عملية:
+  صرف → تخرج من financial_account
+  قبض → تدخل إلى financial_account
+
+- لازم كل حساب مالي يكون مربوط بحساب محاسبي:
+  مثال:
+  صندوق → حساب "الصندوق"
+  بنك → حساب "البنك"
+
+- opening_balance يستخدم فقط كبداية
+- بعد ذلك يتم حساب الرصيد من القيود
+
+
+==================================================
+EXAMPLES
+==================================================
+
+1) صندوق الفرع الرئيسي
+- name = صندوق الفرع الرئيسي
+- type = cash
+
+2) حساب بنك
+- name = بنك الجمهورية
+- type = bank
+
+
+==================================================
+SYSTEM ROLE
+==================================================
+
+- يربط التشغيل بالمحاسبة
+- يمثل مصدر الأموال
+- يستخدم في:
+  - payment_vouchers (الصرف)
+  - receipt_vouchers (القبض)
+
+==================================================
+
+==================================================
+TABLE: expense_categories (تصنيفات المصروفات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- name → اسم نوع المصروف (إيجار / كهرباء / صيانة...)
+- code → رمز المصروف (فريد)
+- expense_account_id → الحساب المحاسبي المرتبط بالمصروف
+- is_active → هل التصنيف فعال
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- expense_categories → belongsTo → accounts
+- expense_categories → hasMany → payment_vouchers
+
+PENDING FK:
+- expense_account_id → accounts.id
+
+NOTES:
+- هذا الجدول لا يخزن الصرف نفسه
+- هذا الجدول فقط يعرف نوع المصروف
+- الصرف الفعلي يتم في payment_vouchers
+- كل نوع مصروف لازم يكون مربوط بحساب محاسبي مستقل
+
+EXAMPLES:
+- إيجار → حساب مصروف الإيجار
+- كهرباء → حساب مصروف الكهرباء
+- ماء → حساب مصروف الماء
+- صيانة → حساب مصروف الصيانة
+- رواتب → حساب مصروف الرواتب
+
+SYSTEM ROLE:
+- يستخدم لتصنيف المصروفات العامة
+- يسهل التقارير التفصيلية
+- يمنع الحاجة إلى جدول خاص لكل نوع مصروف
+==================================================
+==================================================
+TABLE: categories (تصنيفات المنتجات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- name → اسم التصنيف
+- code → رمز التصنيف (فريد)
+- description → وصف التصنيف
+- is_active → هل التصنيف فعال
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- categories → hasMany → products
+
+NOTES:
+- هذا الجدول مخصص لتنظيم المنتجات
+- كل منتج يمكن أن يكون تابعًا لتصنيف واحد
+- يفيد في الفلاتر والتقارير وترتيب المنتجات
+
+EXAMPLES:
+- حديد
+- دهانات
+- سباكة
+- أدوات كهربائية
+- خدمات
+
+SYSTEM ROLE:
+- تجميع المنتجات في مجموعات
+- تسهيل البحث والتصفية
+- تحسين التقارير حسب نوع المنتج
+==================================================
+==================================================
+TABLE: products (المنتجات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- category_id → التصنيف
+- name → اسم المنتج
+- product_code → كود المنتج الداخلي (فريد)
+- barcode → الباركود (اختياري)
+- unit_name → اسم الوحدة (قطعة / متر / كرتونة...)
+- image_path → مسار صورة المنتج
+- current_price → سعر البيع الحالي
+- last_purchase_price → آخر سعر شراء
+- minimum_stock → الحد الأدنى للتنبيه
+- is_service → هل هذا Service وليس بضاعة
+- is_active → هل المنتج فعال
+- is_deleted → هل المنتج محذوف منطقيًا
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- products → belongsTo → categories
+- products → hasMany → product_price_histories
+- products → hasMany → inventory_batches
+- products → hasMany → order_items
+- products → hasMany → purchase_invoice_items
+- products → hasMany → return_invoice_items
+- products → hasMany → stock_transfer_items
+
+FOREIGN KEYS:
+- category_id → categories.id
+
+NOTES:
+- product_code مهم جدًا ويجب أن يكون فريد
+- barcode اختياري
+- image_path يخزن فقط مسار الصورة وليس الصورة نفسها
+- current_price هو سعر البيع الحالي
+- last_purchase_price هو آخر سعر شراء معروف
+- minimum_stock يستخدم للتنبيه على قرب النفاد
+- is_service إذا كان true فالعنصر خدمة وليس بضاعة
+- الخدمة لا تدخل المخزون ولا FIFO
+- is_deleted للحذف المنطقي بدل الحذف النهائي
+
+EXAMPLES:
+- name = حديد 6 لينيه
+- product_code = PRD-0001
+- unit_name = قطعة
+- image_path = products/iron-6-line.jpg
+
+SYSTEM ROLE:
+- يمثل كل ما يباع أو يشترى أو يدار في النظام
+- أساس المبيعات والمشتريات والمخزون والتقارير
+==================================================
+==================================================
+TABLE: product_price_histories (سجل تغير أسعار المنتجات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- product_id → المنتج
+- price → السعر
+- start_date → تاريخ بداية هذا السعر
+- end_date → تاريخ نهاية هذا السعر
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- product_price_histories → belongsTo → products
+
+FOREIGN KEYS:
+- product_id → products.id
+
+NOTES:
+- هذا الجدول لا يخزن كل بيانات المنتج
+- هذا الجدول فقط يسجل تاريخ تغير السعر
+- السعر الحالي الموجود في جدول products هو السعر النشط الحالي
+- عند تغيير السعر:
+  - يغلق السجل السابق بوضع end_date
+  - ينشأ سجل جديد بسعر جديد وتاريخ بداية جديد
+
+EXAMPLES:
+- المنتج = حديد 6 لينيه
+- السعر = 120.00
+- start_date = 2026-04-01
+- end_date = 2026-04-15
+
+SYSTEM ROLE:
+- حفظ تاريخ تغيرات أسعار البيع
+- دعم التقارير والمراجعة
+==================================================
+==================================================
+TABLE: inventory_batches (دفعات المخزون)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- product_id → المنتج
+- warehouse_id → المخزن
+- purchase_invoice_id → فاتورة الشراء التي دخلت منها الدفعة
+- quantity → الكمية الأصلية
+- remaining_quantity → الكمية المتبقية من الدفعة
+- base_price → سعر التكلفة الأساسي
+- purchase_price → سعر الشراء
+- entry_date → تاريخ دخول الدفعة
+- expiry_date → تاريخ الانتهاء (اختياري)
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- inventory_batches → belongsTo → products
+- inventory_batches → belongsTo → warehouses
+- inventory_batches → belongsTo → purchase_invoices
+- inventory_batches → hasMany → order_item_batches
+
+FOREIGN KEYS:
+- product_id → products.id
+- warehouse_id → warehouses.id
+- purchase_invoice_id → purchase_invoices.id
+
+NOTES:
+- هذا الجدول يمثل كل دفعة شراء دخلت إلى المخزن
+- كل دفعة لها كمية أصلية وكمية متبقية
+- عند البيع بنظام FIFO يتم السحب من أقدم دفعة أولاً
+- service لا يجب أن ينشئ دفعات مخزون
+- remaining_quantity هو الأساس الحقيقي لمعرفة المتبقي من كل دفعة
+- البضاعة نفسها قد تكون موجودة في أكثر من مخزن، لذلك warehouse_id مهم جدًا
+
+EXAMPLES:
+- المنتج = حديد 6 لينيه
+- المخزن = المخزن الرئيسي
+- الكمية = 100
+- المتبقي = 65
+- base_price = 75
+- purchase_price = 80
+
+SYSTEM ROLE:
+- أساس إدارة المخزون
+- أساس حساب التكلفة
+- أساس FIFO
+- يحدد الرصيد لكل منتج داخل كل مخزن
+==================================================
+==================================================
+TABLE: order_item_batches (ربط بنود البيع بالدفعات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- order_item_id → بند البيع
+- batch_id → دفعة المخزون التي تم السحب منها
+- quantity_used → الكمية المسحوبة من هذه الدفعة
+- unit_cost → تكلفة الوحدة وقت السحب
+- total_cost → إجمالي التكلفة لهذا الجزء المسحوب
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- order_item_batches → belongsTo → order_items
+- order_item_batches → belongsTo → inventory_batches
+
+FOREIGN KEYS:
+- order_item_id → order_items.id
+- batch_id → inventory_batches.id
+
+NOTES:
+- هذا الجدول لا يمثل البيع نفسه
+- هذا الجدول يمثل من أي دفعات تم السحب وقت البيع
+- إذا تم بيع 10 وحدات من منتج، ممكن تسحب:
+  - 6 من دفعة أولى
+  - 4 من دفعة ثانية
+- لذلك قد يكون لبند بيع واحد أكثر من سجل في هذا الجدول
+- هذا الجدول أساسي جدًا في:
+  - FIFO
+  - حساب التكلفة
+  - الإلغاء
+  - المرتجعات
+
+EXAMPLES:
+- order_item_id = 15
+- batch_id = 3
+- quantity_used = 6
+- unit_cost = 75
+- total_cost = 450
+
+SYSTEM ROLE:
+- يربط المبيعات بالمخزون
+- يحدد تكلفة كل بند بيع بدقة
+- يسمح بإرجاع الكمية لنفس الدفعات عند الإلغاء أو المرتجع
+==================================================
+==================================================
+TABLE: stock_transfer_items (بنود تحويل المخزون)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- stock_transfer_id → رأس التحويل
+- product_id → المنتج
+- quantity → الكمية المحولة
+- unit_cost → تكلفة الوحدة
+- total_cost → إجمالي التكلفة
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- stock_transfer_items → belongsTo → stock_transfers
+- stock_transfer_items → belongsTo → products
+
+FOREIGN KEYS:
+- stock_transfer_id → stock_transfers.id
+- product_id → products.id
+
+NOTES:
+- هذا الجدول يمثل تفاصيل المنتجات الموجودة داخل عملية التحويل
+- الكمية المحولة يجب أن تكون متاحة في المخزن المصدر
+- service لا تدخل في هذا الجدول
+- total_cost = quantity × unit_cost
+
+EXAMPLES:
+- product_id = حديد 6 لينيه
+- quantity = 20
+- unit_cost = 75
+- total_cost = 1500
+
+SYSTEM ROLE:
+- حفظ بنود كل تحويل مخزني
+- نقل الكميات والتكلفة من مخزن إلى آخر
+==================================================
+==================================================
+TABLE: customers (العملاء)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- branch_id → الفرع
+- name → اسم العميل
+- code → كود العميل (فريد)
+- phone → الهاتف
+- email → البريد
+- address → العنوان
+- notes → ملاحظات
+- account_id → الحساب المحاسبي للعميل
+- is_active → هل فعال
+- is_deleted → حذف منطقي
+- is_locked → هل مقفل
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- customers → belongsTo → branches
+- customers → hasMany → orders
+- customers → hasMany → return_invoices
+- customers → hasMany → receipt_vouchers
+- customers → hasMany → payment_vouchers
+
+PENDING FK:
+- account_id → accounts.id
+
+NOTES:
+- لكل عميل حساب محاسبي مستقل
+- العميل النقدي يمكن إنشاؤه كسجل خاص
+==================================================
+==================================================
+TABLE: suppliers (الموردون)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- branch_id → الفرع
+- name → اسم المورد
+- code → كود المورد (فريد)
+- phone → الهاتف
+- email → البريد
+- address → العنوان
+- notes → ملاحظات
+- account_id → الحساب المحاسبي للمورد
+- is_active → هل فعال
+- is_deleted → حذف منطقي
+- is_locked → هل مقفل
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- suppliers → belongsTo → branches
+- suppliers → hasMany → purchase_invoices
+- suppliers → hasMany → payment_vouchers
+
+PENDING FK:
+- account_id → accounts.id
+
+NOTES:
+- لكل مورد حساب محاسبي مستقل
+- مورد المصروفات العامة يمكن إنشاؤه كسجل خاص إذا احتجتيه
+==================================================
+==================================================
+TABLE: payment_methods (طرق الدفع)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- name → اسم الطريقة
+- code → الرمز
+- is_active → هل فعال
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- payment_methods → hasMany → payment_vouchers
+- payment_methods → hasMany → receipt_vouchers
+
+NOTES:
+- أمثلة: كاش / بطاقة / شيك / تحويل بنكي
+==================================================
+==================================================
+TABLE: orders (فواتير المبيعات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- order_number → رقم الفاتورة (فريد)
+- branch_id → الفرع
+- customer_id → العميل
+- order_date → تاريخ الفاتورة
+- subtotal → الإجمالي قبل الخصم
+- discount_amount → الخصم
+- total_price → الإجمالي النهائي
+- total_cost → إجمالي التكلفة
+- total_profit → إجمالي الربح
+- status → حالة الفاتورة
+- payment_status → حالة السداد
+- journal_entry_id → القيد المحاسبي
+- user_id → المنشئ
+- updated_by_user_id → آخر معدل
+- is_deleted → حذف منطقي
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- orders → belongsTo → branches
+- orders → belongsTo → customers
+- orders → hasMany → order_items
+- orders → hasMany → return_invoice_items
+
+PENDING FK:
+- journal_entry_id → journal_entries.id
+- user_id → users.id
+- updated_by_user_id → users.id
+
+NOTES:
+- status مثال: draft / completed / cancelled
+- payment_status مثال: paid / partial / due
+==================================================
+==================================================
+TABLE: order_items (بنود المبيعات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- order_id → الفاتورة
+- product_id → المنتج
+- product_name → اسم المنتج وقت البيع
+- quantity → الكمية
+- unit_price → سعر الوحدة
+- cost_price → تكلفة الوحدة
+- profit → ربح البند
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- order_items → belongsTo → orders
+- order_items → belongsTo → products
+- order_items → hasMany → order_item_batches
+
+FOREIGN KEYS:
+- order_id → orders.id
+- product_id → products.id
+
+NOTES:
+- product_name يخزن الاسم وقت البيع
+- cost_price و profit مهمين للتقارير
+==================================================
+==================================================
+TABLE: purchase_invoices (فواتير المشتريات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- invoice_number → رقم الفاتورة (فريد)
+- branch_id → الفرع
+- warehouse_id → المخزن المستلم
+- supplier_id → المورد
+- invoice_date → تاريخ الفاتورة
+- subtotal → الإجمالي قبل الخصم
+- discount_amount → الخصم
+- total_expenses → مصروفات الشراء
+- total_price → الإجمالي النهائي
+- total_base_price → إجمالي التكلفة
+- journal_entry_id → القيد
+- user_id → المنشئ
+- updated_by_user_id → آخر معدل
+- is_deleted → حذف منطقي
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- purchase_invoices → belongsTo → branches
+- purchase_invoices → belongsTo → warehouses
+- purchase_invoices → belongsTo → suppliers
+- purchase_invoices → hasMany → purchase_invoice_items
+- purchase_invoices → hasMany → inventory_batches
+
+PENDING FK:
+- journal_entry_id → journal_entries.id
+- user_id → users.id
+- updated_by_user_id → users.id
+==================================================
+==================================================
+TABLE: purchase_invoice_items (بنود المشتريات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- invoice_id → فاتورة الشراء
+- product_id → المنتج
+- quantity → الكمية
+- price → سعر الشراء
+- cost_price → سعر التكلفة
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- purchase_invoice_items → belongsTo → purchase_invoices
+- purchase_invoice_items → belongsTo → products
+
+FOREIGN KEYS:
+- invoice_id → purchase_invoices.id
+- product_id → products.id
+==================================================
+==================================================
+TABLE: return_invoices (فواتير المرتجعات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- return_number → رقم المرتجع (فريد)
+- branch_id → الفرع
+- warehouse_id → المخزن الذي رجعت له الكمية
+- customer_id → العميل
+- return_date → تاريخ المرتجع
+- total_refund_amount → إجمالي قيمة المرتجع
+- discount_amount → قيمة الخصم المرتبط
+- journal_entry_id → القيد
+- user_id → المنشئ
+- deleted_by_user_id → من حذف
+- deleted_at → وقت الحذف
+- is_deleted → حذف منطقي
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- return_invoices → belongsTo → branches
+- return_invoices → belongsTo → warehouses
+- return_invoices → belongsTo → customers
+- return_invoices → hasMany → return_invoice_items
+
+PENDING FK:
+- journal_entry_id → journal_entries.id
+- user_id → users.id
+- deleted_by_user_id → users.id
+==================================================
+==================================================
+TABLE: return_invoice_items (بنود المرتجعات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- return_invoice_id → رأس المرتجع
+- order_id → فاتورة البيع الأصلية
+- product_id → المنتج
+- quantity → الكمية المرتجعة
+- refund_amount → قيمة الاسترجاع
+- unit_refund_price → سعر استرجاع الوحدة
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- return_invoice_items → belongsTo → return_invoices
+- return_invoice_items → belongsTo → orders
+- return_invoice_items → belongsTo → products
+
+FOREIGN KEYS:
+- return_invoice_id → return_invoices.id
+- order_id → orders.id
+- product_id → products.id
+==================================================
+==================================================
+TABLE: receipt_vouchers (سندات القبض)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- voucher_number → رقم السند
+- voucher_date → التاريخ
+- branch_id → الفرع
+- financial_account_id → إلى أي خزينة/بنك دخل
+- payment_method_id → طريقة الدفع
+- received_from_type → نوع الجهة
+- received_from_id → معرف الجهة
+- account_id → الحساب المقابل
+- amount → المبلغ
+- description → البيان
+- reference_type → نوع المرجع
+- reference_id → رقم المرجع
+- journal_entry_id → القيد الناتج
+- created_by_user_id → المنشئ
+- status → الحالة
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- receipt_vouchers → belongsTo → branches
+- receipt_vouchers → belongsTo → financial_accounts
+- receipt_vouchers → belongsTo → payment_methods
+
+PENDING FK:
+- account_id → accounts.id
+- journal_entry_id → journal_entries.id
+- created_by_user_id → users.id
+
+NOTES:
+- received_from_type أمثلة:
+  customer / partner / other
+- received_from_id معرف السجل حسب النوع
+==================================================
+==================================================
+TABLE: payment_vouchers (سندات الصرف)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- voucher_number → رقم السند
+- voucher_date → التاريخ
+- branch_id → الفرع
+- financial_account_id → من أي خزينة/بنك خرج
+- payment_method_id → طريقة الدفع
+- beneficiary_type → نوع الجهة المصروف لها
+- beneficiary_id → معرف الجهة
+- expense_category_id → تصنيف المصروف
+- account_id → الحساب المقابل
+- amount → المبلغ
+- description → البيان
+- reference_type → نوع المرجع
+- reference_id → رقم المرجع
+- journal_entry_id → القيد الناتج
+- created_by_user_id → المنشئ
+- status → الحالة
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- payment_vouchers → belongsTo → branches
+- payment_vouchers → belongsTo → financial_accounts
+- payment_vouchers → belongsTo → payment_methods
+- payment_vouchers → belongsTo → expense_categories
+
+PENDING FK:
+- account_id → accounts.id
+- journal_entry_id → journal_entries.id
+- created_by_user_id → users.id
+
+NOTES:
+- beneficiary_type أمثلة:
+  supplier / employee / partner / customer / expense / other
+==================================================
+==================================================
+TABLE: journal_entries (رؤوس القيود اليومية)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- entry_number → رقم القيد
+- entry_date → تاريخ القيد
+- branch_id → الفرع
+- description → البيان
+- source_type → مصدر القيد
+- source_id → رقم المصدر
+- created_by_user_id → المنشئ
+- status → الحالة
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- journal_entries → belongsTo → branches
+- journal_entries → hasMany → journal_entry_lines
+
+PENDING FK:
+- created_by_user_id → users.id
+
+NOTES:
+- source_type أمثلة:
+  order / purchase_invoice / payment_voucher / receipt_voucher / fixed_asset / depreciation
+==================================================
+==================================================
+TABLE: journal_entry_lines (سطور القيود)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- journal_entry_id → رأس القيد
+- account_id → الحساب
+- debit → مدين
+- credit → دائن
+- description → البيان
+- partner_id → الشريك (اختياري)
+- customer_id → العميل (اختياري)
+- supplier_id → المورد (اختياري)
+- employee_id → الموظف (اختياري)
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- journal_entry_lines → belongsTo → journal_entries
+- journal_entry_lines → belongsTo → accounts
+
+FOREIGN KEYS:
+- journal_entry_id → journal_entries.id
+
+PENDING FK:
+- account_id → accounts.id
+- partner_id → partners.id
+- customer_id → customers.id
+- supplier_id → suppliers.id
+- employee_id → employees.id
+
+NOTES:
+- يجب أن يكون مجموع المدين = مجموع الدائن لكل قيد
+==================================================
+==================================================
+TABLE: fixed_assets (الأصول الثابتة)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- branch_id → الفرع
+- name → اسم الأصل
+- asset_code → كود الأصل
+- purchase_date → تاريخ الشراء
+- purchase_value → قيمة الشراء
+- salvage_value → القيمة التخريدية
+- useful_life_years → العمر الإنتاجي بالسنوات
+- depreciation_method → طريقة الإهلاك
+- asset_account_id → حساب الأصل
+- depreciation_account_id → مجمع الإهلاك
+- depreciation_expense_account_id → مصروف الإهلاك
+- journal_entry_id → قيد الشراء
+- is_active → هل الأصل فعال
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- fixed_assets → belongsTo → branches
+- fixed_assets → hasMany → fixed_asset_depreciations
+
+PENDING FK:
+- asset_account_id → accounts.id
+- depreciation_account_id → accounts.id
+- depreciation_expense_account_id → accounts.id
+- journal_entry_id → journal_entries.id
+==================================================
+==================================================
+TABLE: fixed_asset_depreciations (إهلاك الأصول)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- fixed_asset_id → الأصل
+- depreciation_date → تاريخ الإهلاك
+- amount → قيمة الإهلاك
+- journal_entry_id → القيد الناتج
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- fixed_asset_depreciations → belongsTo → fixed_assets
+
+PENDING FK:
+- journal_entry_id → journal_entries.id
+
+NOTES:
+- يمثل قيد/حركة إهلاك أصل واحد في فترة معينة
+==================================================
+==================================================
+TABLE: roles (الأدوار / الصلاحيات)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- name → اسم الدور
+- code → رمز الدور (فريد)
+- permissions → الصلاحيات بصيغة JSON
+- is_active → هل الدور فعال
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- roles → hasMany → users
+
+NOTES:
+- هذا الجدول يمثل أدوار المستخدمين داخل النظام
+- مثال:
+  Admin / Accountant / Cashier / Storekeeper / Manager
+- permissions تخزن الصلاحيات التفصيلية
+- يمكن لاحقًا استخدام جدول permissions منفصل إذا كبر النظام أكثر
+- حاليًا JSON مناسب ومرن
+
+EXAMPLES:
+- Admin
+- Manager
+- Accountant
+- Cashier
+- Storekeeper
+
+SYSTEM ROLE:
+- التحكم في صلاحيات المستخدمين
+- ربط كل مستخدم بدور واحد
+==================================================
+==================================================
+TABLE: users (مستخدمو النظام)
+==================================================
+
+COLUMNS:
+- id → المعرف الأساسي
+- branch_id → الفرع التابع له المستخدم
+- role_id → الدور
+- name → الاسم الكامل
+- username → اسم المستخدم (فريد)
+- password → كلمة المرور المشفرة
+- phone → الهاتف
+- email → البريد الإلكتروني
+- address → العنوان
+- salary → الراتب (اختياري إن كان المستخدم موظفًا أيضًا)
+- image_path → مسار صورة المستخدم
+- is_active → هل المستخدم فعال
+- is_deleted → حذف منطقي
+- is_locked → هل المستخدم مقفل
+- last_login_at → آخر تسجيل دخول
+- notes → ملاحظات
+- created_at / updated_at → تواريخ
+
+RELATIONS:
+- users → belongsTo → branches
+- users → belongsTo → roles
+- users → hasMany → branches (as manager later through manager_user_id)
+- users → hasMany → orders (user_id)
+- users → hasMany → purchase_invoices (user_id)
+- users → hasMany → return_invoices (user_id)
+- users → hasMany → payment_vouchers (created_by_user_id)
+- users → hasMany → receipt_vouchers (created_by_user_id)
+- users → hasMany → stock_transfers (user_id)
+- users → hasMany → journal_entries (created_by_user_id)
+
+FOREIGN KEYS:
+- branch_id → branches.id
+- role_id → roles.id
+
+NOTES:
+- هذا الجدول خاص بمستخدمي النظام الذين يسجلون دخول
+- ليس كل موظف بالضرورة مستخدم
+- وليس كل مستخدم بالضرورة شريك
+- password يجب أن يكون مشفرًا
+- image_path يخزن مسار الصورة فقط
+- last_login_at يفيد في المتابعة والتقارير الأمنية
+
+SYSTEM ROLE:
+- تسجيل الدخول
+- تحديد من أنشأ أو عدل العمليات
+- التحكم في الصلاحيات عبر role_id
+==================================================

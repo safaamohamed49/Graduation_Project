@@ -6,11 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class PaymentMethod extends Model
 {
-    protected $table = 'payment_methods';
+    protected $fillable = ['name', 'code', 'is_active'];
 
-    public $timestamps = false;
-
-    protected $fillable = [
-        'name',
+    protected $casts = [
+        'is_active' => 'boolean',
     ];
 }

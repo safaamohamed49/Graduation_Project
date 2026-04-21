@@ -3,53 +3,47 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PurchaseInvoice extends Model
 {
-    protected $table = 'purchase_invoices';
-
-    const CREATED_AT = null;
-    const UPDATED_AT = null;
-
     protected $fillable = [
         'invoice_number',
+        'branch_id',
+        'warehouse_id',
         'supplier_id',
-        'date',
+        'invoice_date',
+        'subtotal',
+        'discount_amount',
+        'total_expenses',
         'total_price',
         'total_base_price',
-        'total_expenses',
-        'discount_amount',
-        'is_deleted',
+        'journal_entry_id',
         'user_id',
         'updated_by_user_id',
+        'is_deleted',
+        'notes',
     ];
 
     protected $casts = [
-        'date' => 'datetime',
+        'branch_id' => 'integer',
+        'warehouse_id' => 'integer',
+        'supplier_id' => 'integer',
+        'journal_entry_id' => 'integer',
+        'user_id' => 'integer',
+        'updated_by_user_id' => 'integer',
+        'invoice_date' => 'datetime',
+        'subtotal' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'total_expenses' => 'decimal:2',
         'total_price' => 'decimal:2',
         'total_base_price' => 'decimal:2',
-        'total_expenses' => 'decimal:2',
-        'discount_amount' => 'decimal:2',
         'is_deleted' => 'boolean',
     ];
 
-    public function supplier()
-    {
-        return $this->belongsTo(Supplier::class, 'supplier_id');
-    }
-
-    public function creator()
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
-
-    public function updater()
-    {
-        return $this->belongsTo(User::class, 'updated_by_user_id');
-    }
-
-    public function items()
-    {
-        return $this->hasMany(PurchaseInvoiceItem::class, 'invoice_id');
-    }
+    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
+    public function warehouse(): BelongsTo { return $this->belongsTo(Warehouse::class); }
+    public function supplier(): BelongsTo { return $this->belongsTo(Supplier::class); }
+    public function items(): HasMany { return $this->hasMany(PurchaseInvoiceItem::class, 'invoice_id'); }
 }

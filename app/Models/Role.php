@@ -3,24 +3,25 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Role extends Model
 {
-    protected $table = 'roles';
-
-    public $timestamps = false;
-
     protected $fillable = [
         'name',
+        'code',
         'permissions',
+        'is_active',
+        'notes',
     ];
 
     protected $casts = [
         'permissions' => 'array',
+        'is_active' => 'boolean',
     ];
 
-    public function users()
+    public function users(): HasMany
     {
-        return $this->hasMany(User::class, 'role_id');
+        return $this->hasMany(User::class);
     }
 }

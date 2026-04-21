@@ -1,0 +1,403 @@
+==================================================
+FINAL RESTRUCTURING PLAN
+خطة إعادة الهيكلة النهائية
+==================================================
+
+
+========================================
+أولاً: الجداول الجديدة المعتمدة في الهيكل الجديد
+========================================
+
+1) branches
+   الفروع
+
+2) warehouses
+   المخازن
+
+3) partners
+   الشركاء
+
+4) employees
+   الموظفون
+
+5) accounts
+   شجرة الحسابات
+
+6) financial_accounts
+   الخزائن والبنوك
+
+7) expense_categories
+   تصنيفات المصروفات
+
+8) categories
+   تصنيفات المنتجات
+
+9) products
+   المنتجات
+
+10) product_price_histories
+    سجل تغير أسعار المنتجات
+
+11) inventory_batches
+    دفعات المخزون
+
+12) order_item_batches
+    ربط بنود البيع بالدفعات
+
+13) stock_transfers
+    تحويلات المخزون
+
+14) stock_transfer_items
+    بنود تحويل المخزون
+
+15) customers
+    العملاء
+
+16) suppliers
+    الموردون
+
+17) payment_methods
+    طرق الدفع
+
+18) orders
+    فواتير المبيعات
+
+19) order_items
+    بنود المبيعات
+
+20) purchase_invoices
+    فواتير المشتريات
+
+21) purchase_invoice_items
+    بنود المشتريات
+
+22) return_invoices
+    فواتير المرتجعات
+
+23) return_invoice_items
+    بنود المرتجعات
+
+24) receipt_vouchers
+    سندات القبض
+
+25) payment_vouchers
+    سندات الصرف
+
+26) journal_entries
+    رؤوس القيود اليومية
+
+27) journal_entry_lines
+    سطور القيود
+
+28) fixed_assets
+    الأصول الثابتة
+
+29) fixed_asset_depreciations
+    إهلاك الأصول
+
+30) roles
+    الأدوار والصلاحيات
+
+31) users
+    مستخدمو النظام
+
+
+========================================
+ثانياً: الجداول القديمة التي غالبًا ستُحذف أو تُستبدل
+========================================
+
+1) receipts
+   السبب:
+   تم استبداله بـ receipt_vouchers
+
+2) customer_payments
+   السبب:
+   تم استبداله بـ payment_vouchers / receipt_vouchers حسب نوع العملية
+
+3) supplier_payments
+   السبب:
+   تم استبداله بـ payment_vouchers
+
+4) system_finance
+   السبب:
+   لم يعد ضروريًا لأن financial_accounts + journal_entries يغطيان الوظيفة بشكل صحيح
+
+5) أي جدول قديم يعتمد على محل واحد / مخزن واحد فقط
+   السبب:
+   الهيكل الجديد أصبح متعدد الفروع والمخازن
+
+
+========================================
+ثالثاً: الجداول القديمة التي يمكن الإبقاء عليها فقط لو كانت متوافقة
+========================================
+
+1) roles
+   إذا كانت بسيطة ومناسبة يمكن إعادة بنائها أو الإبقاء على الفكرة فقط
+
+2) users
+   لكن الهيكل الجديد أفضل، خاصة مع branch_id و role_id و image_path و last_login_at
+
+3) payment_methods
+   يمكن الإبقاء على الفكرة لكن يفضّل اعتماد الشكل الجديد
+
+4) categories
+   يفضل اعتماد الشكل الجديد لأنه فيه code و notes و is_active
+
+5) products
+   يفضل اعتماد الشكل الجديد بالكامل لأنه يدعم:
+   - product_code
+   - barcode
+   - image_path
+   - minimum_stock
+   - is_service
+   - is_active
+   - is_deleted
+
+6) order / purchase / return related tables
+   يفضل إعادة بنائها بالشكل الجديد بدل ترقيع القديم
+
+
+========================================
+رابعاً: الجداول التي أصبحت مرجعًا لعدة جداول أخرى
+========================================
+
+1) branches
+   مرجع للفروع
+
+2) warehouses
+   مرجع للمخازن
+
+3) accounts
+   مرجع محاسبي عام
+
+4) users
+   مرجع للمستخدمين والمنشئين والمعدلين
+
+5) roles
+   مرجع للأدوار
+
+6) financial_accounts
+   مرجع للخزائن والبنوك
+
+7) expense_categories
+   مرجع لتصنيف المصروفات
+
+
+========================================
+خامساً: المفاتيح الأجنبية المؤجلة التي يجب ربطها لاحقًا
+========================================
+
+1) branches.manager_user_id → users.id
+
+2) partners.capital_account_id → accounts.id
+
+3) partners.current_account_id → accounts.id
+
+4) employees.account_id → accounts.id
+
+5) financial_accounts.account_id → accounts.id
+
+6) expense_categories.expense_account_id → accounts.id
+
+7) customers.account_id → accounts.id
+
+8) suppliers.account_id → accounts.id
+
+9) orders.journal_entry_id → journal_entries.id
+
+10) orders.user_id → users.id
+
+11) orders.updated_by_user_id → users.id
+
+12) purchase_invoices.journal_entry_id → journal_entries.id
+
+13) purchase_invoices.user_id → users.id
+
+14) purchase_invoices.updated_by_user_id → users.id
+
+15) return_invoices.journal_entry_id → journal_entries.id
+
+16) return_invoices.user_id → users.id
+
+17) return_invoices.deleted_by_user_id → users.id
+
+18) receipt_vouchers.account_id → accounts.id
+
+19) receipt_vouchers.journal_entry_id → journal_entries.id
+
+20) receipt_vouchers.created_by_user_id → users.id
+
+21) payment_vouchers.account_id → accounts.id
+
+22) payment_vouchers.journal_entry_id → journal_entries.id
+
+23) payment_vouchers.created_by_user_id → users.id
+
+24) stock_transfers.user_id → users.id
+
+25) journal_entries.created_by_user_id → users.id
+
+26) journal_entry_lines.account_id → accounts.id
+
+27) journal_entry_lines.partner_id → partners.id
+
+28) journal_entry_lines.customer_id → customers.id
+
+29) journal_entry_lines.supplier_id → suppliers.id
+
+30) journal_entry_lines.employee_id → employees.id
+
+31) fixed_assets.asset_account_id → accounts.id
+
+32) fixed_assets.depreciation_account_id → accounts.id
+
+33) fixed_assets.depreciation_expense_account_id → accounts.id
+
+34) fixed_assets.journal_entry_id → journal_entries.id
+
+35) fixed_asset_depreciations.journal_entry_id → journal_entries.id
+
+
+========================================
+سادساً: ملاحظات مهمة جدًا قبل الحذف
+========================================
+
+1) لا تمسحي القديم قبل ما تجمعي كل الملفات الجديدة
+2) الأفضل تخزني نسخة احتياطية من:
+   - المشروع
+   - قاعدة البيانات
+3) الحذف النهائي يكون بعد التأكد أن:
+   - كل المودلز الجديدة جاهزة
+   - كل المقريشنات الجديدة جاهزة
+   - ترتيب المقريشنات مضبوط
+   - المفاتيح الأجنبية المؤجلة معروفة
+4) بعض الجداول الجديدة تعتمد على ترتيب صحيح في المقريشنات
+   لذلك من الأفضل بعد الانتهاء الكامل:
+   - نراجع ترتيب الملفات
+   - ثم نقرر هل نضيف FK مباشرة أو عبر migration لاحقة
+
+
+========================================
+سابعاً: الترتيب المنطقي لتشغيل المايقريشنات
+========================================
+
+المرحلة 1:
+- roles
+- branches
+- accounts
+- categories
+- payment_methods
+
+المرحلة 2:
+- users
+- warehouses
+- partners
+- employees
+- financial_accounts
+- expense_categories
+
+المرحلة 3:
+- customers
+- suppliers
+- products
+- product_price_histories
+
+المرحلة 4:
+- orders
+- order_items
+- purchase_invoices
+- purchase_invoice_items
+- return_invoices
+- return_invoice_items
+
+المرحلة 5:
+- inventory_batches
+- order_item_batches
+- stock_transfers
+- stock_transfer_items
+
+المرحلة 6:
+- journal_entries
+- journal_entry_lines
+- receipt_vouchers
+- payment_vouchers
+
+المرحلة 7:
+- fixed_assets
+- fixed_asset_depreciations
+
+المرحلة 8:
+- migrations إضافية لربط المفاتيح الأجنبية المؤجلة
+
+
+========================================
+ثامناً: ما الذي سنفعله بعد هذا؟
+========================================
+
+1) نراجع ترتيب المقريشنات النهائي
+2) نحدد ما يحتاج تعديل في بعض المقريشنات لتوافق الترتيب
+3) نعمل migrations إضافية خاصة بالمفاتيح الأجنبية المؤجلة
+4) بعدها فقط:
+   - نحذف القديم
+   - ونشغل migrate:fresh --seed
+5) ثم ننتقل إلى:
+   - seeders
+   - controllers
+   - العمليات
+   - الواجهات
+
+
+========================================
+تاسعاً: قرار مهم
+========================================
+
+الهيكل الجديد يعتمد على:
+
+- تعدد الفروع
+- تعدد المخازن
+- شركاء
+- موظفين
+- شجرة حسابات
+- خزائن وبنوك
+- سندات قبض وصرف عامة
+- قيود يومية
+- أصول وإهلاك
+- حذف منطقي في الجداول الحساسة
+
+وهذا يعني أن النظام لم يعد مجرد منظومة مبيعات،
+بل أصبح منظومة تشغيل + محاسبة شبه ERP مصغر.
+
+
+========================================
+عاشراً: الجداول التي نحتاج مراجعة ترتيبها بعناية
+========================================
+
+1) users
+   لأنه يعتمد على roles و branches
+
+2) warehouses
+   لأنه يعتمد على branches
+
+3) customers / suppliers
+   لأنهما يعتمدان على branches والحسابات لاحقًا
+
+4) products
+   لأنه يعتمد على categories
+
+5) purchase_invoices
+   لأنه يعتمد على warehouses و suppliers
+
+6) inventory_batches
+   لأنه يعتمد على products + warehouses + purchase_invoices
+
+7) order_item_batches
+   لأنه يعتمد على order_items + inventory_batches
+
+8) financial_accounts
+   لأنه يعتمد على branches + accounts لاحقًا
+
+9) vouchers
+   لأنها تعتمد على branches + financial_accounts + payment_methods + accounts + users لاحقًا
+
+10) journal_entry_lines
+    لأنه يعتمد على journal_entries + accounts + أطراف أخرى لاحقًا

@@ -1,15 +1,15 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Auth\LoginController;
 
 Route::get('/', function () {
-    return redirect('/login');
+    return redirect()->route('login');
 });
 
 Route::middleware('guest')->group(function () {
@@ -21,7 +21,34 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 
-    Route::resource('customers', CustomerController::class)->except(['show']);
-    Route::resource('suppliers', SupplierController::class)->except(['show']);
-    Route::resource('products', ProductController::class)->except(['show']);
+    /*
+    |--------------------------------------------------------------------------
+    | Categories
+    |--------------------------------------------------------------------------
+    */
+    Route::resource('categories', CategoryController::class)->except(['create', 'edit', 'show']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Products
+    |--------------------------------------------------------------------------
+    */
+    Route::post('/products/{product}/restore', [ProductController::class, 'restore'])
+        ->name('products.restore');
+
+    Route::resource('products', ProductController::class)->except(['create', 'edit', 'show']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customers
+    |--------------------------------------------------------------------------
+    */
+    Route::resource('customers', CustomerController::class)->except(['create', 'edit', 'show']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Suppliers
+    |--------------------------------------------------------------------------
+    */
+    Route::resource('suppliers', SupplierController::class)->except(['create', 'edit', 'show']);
 });

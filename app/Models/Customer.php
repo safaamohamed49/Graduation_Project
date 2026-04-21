@@ -3,43 +3,34 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Customer extends Model
 {
-    protected $table = 'customers';
-
-    public $timestamps = false;
-
     protected $fillable = [
+        'branch_id',
         'name',
+        'code',
         'phone',
+        'email',
+        'address',
         'notes',
+        'account_id',
+        'is_active',
         'is_deleted',
         'is_locked',
     ];
 
     protected $casts = [
+        'branch_id' => 'integer',
+        'account_id' => 'integer',
+        'is_active' => 'boolean',
         'is_deleted' => 'boolean',
         'is_locked' => 'boolean',
     ];
 
-    public function orders()
-    {
-        return $this->hasMany(Order::class, 'customer_id');
-    }
-
-    public function receipts()
-    {
-        return $this->hasMany(Receipt::class, 'customer_id');
-    }
-
-    public function customerPayments()
-    {
-        return $this->hasMany(CustomerPayment::class, 'customer_id');
-    }
-
-    public function returnInvoices()
-    {
-        return $this->hasMany(ReturnInvoice::class, 'customer_id');
-    }
+    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
+    public function orders(): HasMany { return $this->hasMany(Order::class); }
+    public function returnInvoices(): HasMany { return $this->hasMany(ReturnInvoice::class); }
 }

@@ -3,38 +3,33 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class InventoryBatch extends Model
+class OrderItemBatch extends Model
 {
-    protected $table = 'inventory_batches';
-
-    public $timestamps = false;
-
     protected $fillable = [
-        'product_id',
-        'invoice_id',
-        'quantity',
-        'base_price',
-        'purchase_price',
-        'remaining_quantity',
-        'entry_date',
+        'order_item_id',
+        'batch_id',
+        'quantity_used',
+        'unit_cost',
+        'total_cost',
     ];
 
     protected $casts = [
-        'quantity' => 'integer',
-        'base_price' => 'decimal:2',
-        'purchase_price' => 'decimal:2',
-        'remaining_quantity' => 'integer',
-        'entry_date' => 'datetime',
+        'order_item_id' => 'integer',
+        'batch_id' => 'integer',
+        'quantity_used' => 'decimal:2',
+        'unit_cost' => 'decimal:2',
+        'total_cost' => 'decimal:2',
     ];
 
-    public function product()
+    public function orderItem(): BelongsTo
     {
-        return $this->belongsTo(Product::class, 'product_id');
+        return $this->belongsTo(OrderItem::class);
     }
 
-    public function invoice()
+    public function batch(): BelongsTo
     {
-        return $this->belongsTo(PurchaseInvoice::class, 'invoice_id');
+        return $this->belongsTo(InventoryBatch::class, 'batch_id');
     }
 }

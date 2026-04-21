@@ -3,45 +3,30 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class ReturnInvoice extends Model
+class ReturnInvoiceItem extends Model
 {
-    protected $table = 'return_invoices';
-
-    public $timestamps = false;
-
     protected $fillable = [
-        'return_number',
-        'return_date',
-        'customer_id',
-        'total_refund_amount',
-        'discount_amount',
-        'user_id',
-        'is_deleted',
-        'deleted_by_user_id',
-        'deleted_at',
+        'return_invoice_id',
+        'order_id',
+        'product_id',
+        'quantity',
+        'refund_amount',
+        'unit_refund_price',
+        'notes',
     ];
 
     protected $casts = [
-        'return_date' => 'datetime',
-        'total_refund_amount' => 'decimal:2',
-        'discount_amount' => 'decimal:2',
-        'is_deleted' => 'boolean',
-        'deleted_at' => 'datetime',
+        'return_invoice_id' => 'integer',
+        'order_id' => 'integer',
+        'product_id' => 'integer',
+        'quantity' => 'decimal:2',
+        'refund_amount' => 'decimal:2',
+        'unit_refund_price' => 'decimal:2',
     ];
 
-    public function customer()
-    {
-        return $this->belongsTo(Customer::class, 'customer_id');
-    }
-
-    public function creator()
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
-
-    public function items()
-    {
-        return $this->hasMany(ReturnInvoiceItem::class, 'return_invoice_id');
-    }
+    public function returnInvoice(): BelongsTo { return $this->belongsTo(ReturnInvoice::class); }
+    public function order(): BelongsTo { return $this->belongsTo(Order::class); }
+    public function product(): BelongsTo { return $this->belongsTo(Product::class); }
 }
