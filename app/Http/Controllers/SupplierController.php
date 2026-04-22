@@ -4,83 +4,181 @@ namespace App\Http\Controllers;
 
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class SupplierController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request): Response
     {
-        $query = Supplier::query()->where('is_deleted', 0);
+        $search = trim((string) $request->get('search', ''));
 
-        if ($request->filled('search')) {
-            $search = $request->search;
+        $query = Supplier::query()->where('is_deleted', false);
+
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
-        $suppliers = $query->orderByDesc('id')->paginate(15);
+        $suppliers = $query
+            ->orderByDesc('id')
+            ->paginate(15)
+            ->withQueryString();
 
-        return view('suppliers.index', compact('suppliers'));
+        return Inertia::render('Suppliers/Index', [
+            'suppliers' => $suppliers,
+            'filters' => [
+                'search' => $search,
+            ],
+        ]);
     }
 
-    public function create()
+    public function create(): Response
     {
-        return view('suppliers.create');
+        return Inertia::render('Suppliers/Create');
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $data['is_deleted'] = 0;
-        $data['is_locked'] = 0;
+        $name = trim($data['name']);
+        $code = strtoupper(trim($data['code']));
 
-        Supplier::create($data);
+        $existingByName = Supplier::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
+        if ($existingByName) {
+            if ($existingByName->is_deleted) {
+                return back()->withErrors([
+                    'name' => 'يوجد مورد محذوف سابقًا بنفس الاسم "' . $existingByName->name . '". يفضل مراجعته بدل إنشاء مورد جديد.',
+                ])->withInput();
+            }
 
-        return redirect()->route('suppliers.index')->with('success', 'تمت إضافة المورد بنجاح.');
+            return back()->withErrors([
+                'name' => 'لا يمكن إضافة المورد، لأن الاسم "' . $existingByName->name . '" موجود بالفعل.',
+            ])->withInput();
+        }
+
+        $existingByCode = Supplier::whereRaw('LOWER(code) = ?', [mb_strtolower($code)])->first();
+        if ($existingByCode) {
+            if ($existingByCode->is_deleted) {
+                return back()->withErrors([
+                    'code' => 'يوجد مورد محذوف سابقًا يستخدم الرمز "' . $existingByCode->code . '" واسمه "' . $existingByCode->name . '".',
+                ])->withInput();
+            }
+
+            return back()->withErrors([
+                'code' => 'لا يمكن إضافة المورد، لأن الرمز "' . $existingByCode->code . '" مستخدم بالفعل.',
+            ])->withInput();
+        }
+
+        Supplier::create([
+            'branch_id' => null,
+            'name' => $name,
+            'code' => $code,
+            'phone' => $data['phone'] ?? null,
+            'email' => $data['email'] ?? null,
+            'address' => $data['address'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'account_id' => null,
+            'is_active' => $request->boolean('is_active', true),
+            'is_deleted' => false,
+            'is_locked' => false,
+        ]);
+
+        return redirect('/suppliers')->with('success', 'تمت إضافة المورد بنجاح.');
     }
 
-    public function edit($id)
+    public function edit(Supplier $supplier): Response
     {
-        $supplier = Supplier::where('is_deleted', 0)->findOrFail($id);
+        if ($supplier->is_deleted) {
+            abort(404);
+        }
 
-        return view('suppliers.edit', compact('supplier'));
+        return Inertia::render('Suppliers/Edit', [
+            'supplier' => $supplier,
+        ]);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, Supplier $supplier): RedirectResponse
     {
-        $supplier = Supplier::findOrFail($id);
-
         if ($supplier->is_locked) {
-            return redirect()->route('suppliers.index')->with('error', 'لا يمكن تعديل مورد مقفل.');
+            return back()->withErrors([
+                'edit' => 'لا يمكن تعديل مورد مقفل.',
+            ]);
         }
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $supplier->update($data);
+        $name = trim($data['name']);
+        $code = strtoupper(trim($data['code']));
 
-        return redirect()->route('suppliers.index')->with('success', 'تم تعديل المورد بنجاح.');
-    }
+        $existingByName = Supplier::where('id', '!=', $supplier->id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->first();
 
-    public function destroy($id)
-    {
-        $supplier = Supplier::findOrFail($id);
+        if ($existingByName) {
+            return back()->withErrors([
+                'name' => 'لا يمكن تعديل المورد، لأن الاسم "' . $existingByName->name . '" موجود بالفعل.',
+            ])->withInput();
+        }
 
-        if ($supplier->is_locked) {
-            return redirect()->route('suppliers.index')->with('error', 'لا يمكن حذف مورد مقفل.');
+        $existingByCode = Supplier::where('id', '!=', $supplier->id)
+            ->whereRaw('LOWER(code) = ?', [mb_strtolower($code)])
+            ->first();
+
+        if ($existingByCode) {
+            return back()->withErrors([
+                'code' => 'لا يمكن تعديل المورد، لأن الرمز "' . $existingByCode->code . '" مستخدم بالفعل.',
+            ])->withInput();
         }
 
         $supplier->update([
-            'is_deleted' => 1,
+            'name' => $name,
+            'code' => $code,
+            'phone' => $data['phone'] ?? null,
+            'email' => $data['email'] ?? null,
+            'address' => $data['address'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'is_active' => $request->boolean('is_active', true),
         ]);
 
-        return redirect()->route('suppliers.index')->with('success', 'تم حذف المورد بنجاح.');
+        return redirect('/suppliers')->with('success', 'تم تعديل المورد بنجاح.');
+    }
+
+    public function destroy(Supplier $supplier): RedirectResponse
+    {
+        if ($supplier->is_locked) {
+            return back()->withErrors([
+                'delete' => 'لا يمكن حذف مورد مقفل.',
+            ]);
+        }
+
+        $supplier->update([
+            'is_deleted' => true,
+            'is_active' => false,
+        ]);
+
+        return redirect('/suppliers')->with('success', 'تم حذف المورد منطقيًا بنجاح.');
     }
 }

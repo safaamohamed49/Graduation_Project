@@ -25,9 +25,8 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/products/{product}/restore', [ProductController::class, 'restore'])
         ->name('products.restore');
-
     Route::resource('products', ProductController::class)->except(['show']);
 
-    Route::resource('customers', CustomerController::class)->except(['create', 'edit', 'show']);
-    Route::resource('suppliers', SupplierController::class)->except(['create', 'edit', 'show']);
+    Route::resource('customers', CustomerController::class)->except(['show']);
+    Route::resource('suppliers', SupplierController::class)->except(['show']);
 });
