@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -20,7 +19,7 @@ class CategoryController extends Controller
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('code', 'like', "%{$search}%");
+                    ->orWhere('code', 'like', "%{$search}%");
             });
         }
 
@@ -38,6 +37,11 @@ class CategoryController extends Controller
         ]);
     }
 
+    public function create(): Response
+    {
+        return Inertia::render('Categories/Create');
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -48,14 +52,17 @@ class CategoryController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $existingByName = Category::whereRaw('LOWER(name) = ?', [mb_strtolower(trim($data['name']))])->first();
+        $name = trim($data['name']);
+        $code = strtoupper(trim($data['code']));
+
+        $existingByName = Category::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
         if ($existingByName) {
             return back()->withErrors([
                 'name' => 'لا يمكن إضافة الفئة، لأن اسم الفئة "' . $existingByName->name . '" موجود بالفعل.',
             ])->withInput();
         }
 
-        $existingByCode = Category::whereRaw('LOWER(code) = ?', [mb_strtolower(trim($data['code']))])->first();
+        $existingByCode = Category::whereRaw('LOWER(code) = ?', [mb_strtolower($code)])->first();
         if ($existingByCode) {
             return back()->withErrors([
                 'code' => 'لا يمكن إضافة الفئة، لأن رمز الفئة "' . $existingByCode->code . '" مستخدم بالفعل.',
@@ -63,14 +70,21 @@ class CategoryController extends Controller
         }
 
         Category::create([
-            'name' => trim($data['name']),
-            'code' => strtoupper(trim($data['code'])),
+            'name' => $name,
+            'code' => $code,
             'description' => $data['description'] ?? null,
             'is_active' => $data['is_active'] ?? true,
             'notes' => $data['notes'] ?? null,
         ]);
 
-        return back()->with('success', 'تمت إضافة الفئة بنجاح.');
+        return redirect()->route('categories.index')->with('success', 'تمت إضافة الفئة بنجاح.');
+    }
+
+    public function edit(Category $category): Response
+    {
+        return Inertia::render('Categories/Edit', [
+            'category' => $category,
+        ]);
     }
 
     public function update(Request $request, Category $category): RedirectResponse
@@ -83,8 +97,11 @@ class CategoryController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
+        $name = trim($data['name']);
+        $code = strtoupper(trim($data['code']));
+
         $existingByName = Category::where('id', '!=', $category->id)
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower(trim($data['name']))])
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
             ->first();
 
         if ($existingByName) {
@@ -94,7 +111,7 @@ class CategoryController extends Controller
         }
 
         $existingByCode = Category::where('id', '!=', $category->id)
-            ->whereRaw('LOWER(code) = ?', [mb_strtolower(trim($data['code']))])
+            ->whereRaw('LOWER(code) = ?', [mb_strtolower($code)])
             ->first();
 
         if ($existingByCode) {
@@ -104,14 +121,14 @@ class CategoryController extends Controller
         }
 
         $category->update([
-            'name' => trim($data['name']),
-            'code' => strtoupper(trim($data['code'])),
+            'name' => $name,
+            'code' => $code,
             'description' => $data['description'] ?? null,
             'is_active' => $data['is_active'] ?? true,
             'notes' => $data['notes'] ?? null,
         ]);
 
-        return back()->with('success', 'تم تعديل الفئة بنجاح.');
+        return redirect()->route('categories.index')->with('success', 'تم تعديل الفئة بنجاح.');
     }
 
     public function destroy(Category $category): RedirectResponse
@@ -124,6 +141,6 @@ class CategoryController extends Controller
 
         $category->delete();
 
-        return back()->with('success', 'تم حذف الفئة بنجاح.');
+        return redirect()->route('categories.index')->with('success', 'تم حذف الفئة بنجاح.');
     }
 }

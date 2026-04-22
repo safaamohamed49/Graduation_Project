@@ -30,8 +30,8 @@ class ProductController extends Controller
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('product_code', 'like', "%{$search}%")
-                  ->orWhere('barcode', 'like', "%{$search}%");
+                    ->orWhere('product_code', 'like', "%{$search}%")
+                    ->orWhere('barcode', 'like', "%{$search}%");
             });
         }
 
@@ -55,6 +55,13 @@ class ProductController extends Controller
         ]);
     }
 
+    public function create(): Response
+    {
+        return Inertia::render('Products/Create', [
+            'categories' => Category::where('is_active', true)->orderBy('name')->get(),
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -72,11 +79,15 @@ class ProductController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $normalizedName = mb_strtolower(trim($data['name']));
-        $normalizedCode = mb_strtolower(trim($data['product_code']));
-        $normalizedBarcode = isset($data['barcode']) && $data['barcode'] !== null
-            ? mb_strtolower(trim($data['barcode']))
+        $name = trim($data['name']);
+        $productCode = strtoupper(trim($data['product_code']));
+        $barcode = isset($data['barcode']) && $data['barcode'] !== null && trim($data['barcode']) !== ''
+            ? trim($data['barcode'])
             : null;
+
+        $normalizedName = mb_strtolower($name);
+        $normalizedCode = mb_strtolower($productCode);
+        $normalizedBarcode = $barcode ? mb_strtolower($barcode) : null;
 
         $existingByName = Product::whereRaw('LOWER(name) = ?', [$normalizedName])->first();
         if ($existingByName) {
@@ -119,12 +130,12 @@ class ProductController extends Controller
             }
         }
 
-        DB::transaction(function () use ($data) {
+        DB::transaction(function () use ($data, $name, $productCode, $barcode) {
             $product = Product::create([
                 'category_id' => $data['category_id'] ?? null,
-                'name' => trim($data['name']),
-                'product_code' => strtoupper(trim($data['product_code'])),
-                'barcode' => isset($data['barcode']) && $data['barcode'] !== null ? trim($data['barcode']) : null,
+                'name' => $name,
+                'product_code' => $productCode,
+                'barcode' => $barcode,
                 'unit_name' => trim($data['unit_name']),
                 'image_path' => $data['image_path'] ?? null,
                 'current_price' => $data['current_price'],
@@ -145,7 +156,15 @@ class ProductController extends Controller
             ]);
         });
 
-        return back()->with('success', 'تمت إضافة المنتج بنجاح.');
+        return redirect()->route('products.index')->with('success', 'تمت إضافة المنتج بنجاح.');
+    }
+
+    public function edit(Product $product): Response
+    {
+        return Inertia::render('Products/Edit', [
+            'product' => $product->load('category'),
+            'categories' => Category::where('is_active', true)->orderBy('name')->get(),
+        ]);
     }
 
     public function update(Request $request, Product $product): RedirectResponse
@@ -165,11 +184,15 @@ class ProductController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $normalizedName = mb_strtolower(trim($data['name']));
-        $normalizedCode = mb_strtolower(trim($data['product_code']));
-        $normalizedBarcode = isset($data['barcode']) && $data['barcode'] !== null
-            ? mb_strtolower(trim($data['barcode']))
+        $name = trim($data['name']);
+        $productCode = strtoupper(trim($data['product_code']));
+        $barcode = isset($data['barcode']) && $data['barcode'] !== null && trim($data['barcode']) !== ''
+            ? trim($data['barcode'])
             : null;
+
+        $normalizedName = mb_strtolower($name);
+        $normalizedCode = mb_strtolower($productCode);
+        $normalizedBarcode = $barcode ? mb_strtolower($barcode) : null;
 
         $existingByName = Product::where('id', '!=', $product->id)
             ->whereRaw('LOWER(name) = ?', [$normalizedName])
@@ -203,15 +226,15 @@ class ProductController extends Controller
             }
         }
 
-        DB::transaction(function () use ($product, $data) {
+        DB::transaction(function () use ($product, $data, $name, $productCode, $barcode) {
             $oldPrice = (float) $product->current_price;
             $newPrice = (float) $data['current_price'];
 
             $product->update([
                 'category_id' => $data['category_id'] ?? null,
-                'name' => trim($data['name']),
-                'product_code' => strtoupper(trim($data['product_code'])),
-                'barcode' => isset($data['barcode']) && $data['barcode'] !== null ? trim($data['barcode']) : null,
+                'name' => $name,
+                'product_code' => $productCode,
+                'barcode' => $barcode,
                 'unit_name' => trim($data['unit_name']),
                 'image_path' => $data['image_path'] ?? null,
                 'current_price' => $newPrice,
@@ -237,7 +260,7 @@ class ProductController extends Controller
             }
         });
 
-        return back()->with('success', 'تم تعديل المنتج بنجاح.');
+        return redirect()->route('products.index')->with('success', 'تم تعديل المنتج بنجاح.');
     }
 
     public function destroy(Product $product): RedirectResponse
@@ -247,7 +270,7 @@ class ProductController extends Controller
             'is_active' => false,
         ]);
 
-        return back()->with('success', 'تم حذف المنتج منطقيًا بنجاح.');
+        return redirect()->route('products.index')->with('success', 'تم حذف المنتج منطقيًا بنجاح.');
     }
 
     public function restore(Product $product): RedirectResponse
@@ -298,6 +321,6 @@ class ProductController extends Controller
             'is_active' => true,
         ]);
 
-        return back()->with('success', 'تمت إعادة تفعيل المنتج بنجاح.');
+        return redirect()->route('products.index')->with('success', 'تمت إعادة تفعيل المنتج بنجاح.');
     }
 }

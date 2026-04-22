@@ -21,34 +21,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Categories
-    |--------------------------------------------------------------------------
-    */
-    Route::resource('categories', CategoryController::class)->except(['create', 'edit', 'show']);
+    Route::resource('categories', CategoryController::class)->except(['show']);
 
-    /*
-    |--------------------------------------------------------------------------
-    | Products
-    |--------------------------------------------------------------------------
-    */
     Route::post('/products/{product}/restore', [ProductController::class, 'restore'])
         ->name('products.restore');
 
-    Route::resource('products', ProductController::class)->except(['create', 'edit', 'show']);
+    Route::resource('products', ProductController::class)->except(['show']);
 
-    /*
-    |--------------------------------------------------------------------------
-    | Customers
-    |--------------------------------------------------------------------------
-    */
     Route::resource('customers', CustomerController::class)->except(['create', 'edit', 'show']);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Suppliers
-    |--------------------------------------------------------------------------
-    */
     Route::resource('suppliers', SupplierController::class)->except(['create', 'edit', 'show']);
 });
