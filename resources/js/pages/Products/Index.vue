@@ -17,6 +17,9 @@ const search = ref(props.filters?.search ?? '')
 const categoryId = ref(props.filters?.category_id ?? '')
 const status = ref(props.filters?.status ?? 'active')
 
+const deleteModalOpen = ref(false)
+const productToDelete = ref(null)
+
 const categoryOptions = computed(() => [
   { value: '', label: 'كل الفئات' },
   ...props.categories.map((category) => ({
@@ -43,17 +46,28 @@ watch([search, categoryId, status], () => {
 
 const productsData = computed(() => props.products?.data ?? [])
 
-const deleteProduct = (product) => {
-  if (!confirm(`هل أنت متأكدة من حذف المنتج "${product.name}"؟`)) return
+const openDeleteModal = (product) => {
+  productToDelete.value = product
+  deleteModalOpen.value = true
+}
 
-  router.delete(`/products/${product.id}`, {
+const closeDeleteModal = () => {
+  productToDelete.value = null
+  deleteModalOpen.value = false
+}
+
+const confirmDeleteProduct = () => {
+  if (!productToDelete.value) return
+
+  router.delete(`/products/${productToDelete.value.id}`, {
     preserveScroll: true,
+    onFinish: () => {
+      closeDeleteModal()
+    },
   })
 }
 
 const restoreProduct = (product) => {
-  if (!confirm(`هل تريدين استرجاع المنتج "${product.name}"؟`)) return
-
   router.post(`/products/${product.id}/restore`, {}, {
     preserveScroll: true,
   })
@@ -170,7 +184,7 @@ const restoreProduct = (product) => {
                       label="حذف"
                       color="danger"
                       small
-                      @click="deleteProduct(product)"
+                      @click="openDeleteModal(product)"
                     />
 
                     <BaseButton
@@ -210,6 +224,27 @@ const restoreProduct = (product) => {
           v-html="link.label"
         />
       </section>
+    </div>
+
+    <div
+      v-if="deleteModalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+    >
+      <div class="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
+        <div class="mb-4">
+          <h2 class="text-xl font-black text-slate-800">تأكيد الحذف</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-600">
+            هل أنت متأكدة من حذف المنتج
+            <span class="font-bold text-slate-800">"{{ productToDelete?.name }}"</span>
+            ؟ سيتم حذفه منطقيًا وإخفاؤه من المنتجات النشطة.
+          </p>
+        </div>
+
+        <div class="flex justify-end gap-3">
+          <BaseButton label="إلغاء" color="light" @click="closeDeleteModal" />
+          <BaseButton label="تأكيد الحذف" color="danger" @click="confirmDeleteProduct" />
+        </div>
+      </div>
     </div>
   </MainLayout>
 </template>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useForm, Link } from '@inertiajs/vue3'
 import MainLayout from '@/Layouts/MainLayout.vue'
 import CardBox from '@/Components/CardBox.vue'
@@ -10,6 +10,8 @@ import BaseButton from '@/Components/BaseButton.vue'
 const props = defineProps({
   categories: Array,
 })
+
+const previewUrl = ref(null)
 
 const categoryOptions = computed(() => props.categories.map((category) => ({
   value: category.id,
@@ -22,7 +24,7 @@ const form = useForm({
   product_code: '',
   barcode: '',
   unit_name: 'قطعة',
-  image_path: '',
+  image: null,
   current_price: 0,
   last_purchase_price: 0,
   minimum_stock: 0,
@@ -31,8 +33,24 @@ const form = useForm({
   notes: '',
 })
 
+const handleImageChange = (event) => {
+  const file = event.target.files?.[0] ?? null
+  form.image = file
+
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = null
+  }
+
+  if (file) {
+    previewUrl.value = URL.createObjectURL(file)
+  }
+}
+
 const submit = () => {
-  form.post('/products')
+  form.post('/products', {
+    forceFormData: true,
+  })
 }
 </script>
 
@@ -86,8 +104,19 @@ const submit = () => {
           </div>
 
           <div>
-            <label class="mb-2 block text-sm font-bold text-slate-700">مسار الصورة</label>
-            <FormControl v-model="form.image_path" type="text" placeholder="مثال: products/item.jpg" />
+            <label class="mb-2 block text-sm font-bold text-slate-700">صورة المنتج</label>
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp"
+              class="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              @change="handleImageChange"
+            />
+            <div v-if="form.errors.image" class="mt-1 text-sm text-red-600">{{ form.errors.image }}</div>
+          </div>
+
+          <div v-if="previewUrl" class="xl:col-span-3">
+            <label class="mb-2 block text-sm font-bold text-slate-700">معاينة الصورة</label>
+            <img :src="previewUrl" class="h-32 w-32 rounded-2xl object-cover ring-1 ring-slate-200" alt="preview" />
           </div>
 
           <div>

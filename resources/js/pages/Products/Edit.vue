@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useForm, Link } from '@inertiajs/vue3'
 import MainLayout from '@/Layouts/MainLayout.vue'
 import CardBox from '@/Components/CardBox.vue'
@@ -12,10 +12,16 @@ const props = defineProps({
   categories: Array,
 })
 
+const previewUrl = ref(null)
+
 const categoryOptions = computed(() => props.categories.map((category) => ({
   value: category.id,
   label: category.name,
 })))
+
+const currentImageUrl = computed(() => {
+  return props.product.image_path ? `/storage/${props.product.image_path}` : null
+})
 
 const form = useForm({
   category_id: props.product.category_id ?? '',
@@ -23,7 +29,8 @@ const form = useForm({
   product_code: props.product.product_code ?? '',
   barcode: props.product.barcode ?? '',
   unit_name: props.product.unit_name ?? 'قطعة',
-  image_path: props.product.image_path ?? '',
+  image: null,
+  remove_current_image: false,
   current_price: props.product.current_price ?? 0,
   last_purchase_price: props.product.last_purchase_price ?? 0,
   minimum_stock: props.product.minimum_stock ?? 0,
@@ -32,8 +39,25 @@ const form = useForm({
   notes: props.product.notes ?? '',
 })
 
+const handleImageChange = (event) => {
+  const file = event.target.files?.[0] ?? null
+  form.image = file
+
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = null
+  }
+
+  if (file) {
+    previewUrl.value = URL.createObjectURL(file)
+  }
+}
+
 const submit = () => {
-  form.put(`/products/${props.product.id}`)
+  form.post(`/products/${props.product.id}`, {
+    forceFormData: true,
+    _method: 'put',
+  })
 }
 </script>
 
@@ -87,8 +111,41 @@ const submit = () => {
           </div>
 
           <div>
-            <label class="mb-2 block text-sm font-bold text-slate-700">مسار الصورة</label>
-            <FormControl v-model="form.image_path" type="text" />
+            <label class="mb-2 block text-sm font-bold text-slate-700">صورة جديدة</label>
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp"
+              class="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              @change="handleImageChange"
+            />
+            <div v-if="form.errors.image" class="mt-1 text-sm text-red-600">{{ form.errors.image }}</div>
+          </div>
+
+          <div v-if="currentImageUrl || previewUrl" class="xl:col-span-3 flex flex-col gap-3">
+            <label class="block text-sm font-bold text-slate-700">الصورة الحالية / الجديدة</label>
+
+            <div class="flex flex-wrap items-start gap-4">
+              <img
+                v-if="previewUrl"
+                :src="previewUrl"
+                class="h-32 w-32 rounded-2xl object-cover ring-1 ring-slate-200"
+                alt="preview"
+              />
+
+              <img
+                v-else-if="currentImageUrl"
+                :src="currentImageUrl"
+                class="h-32 w-32 rounded-2xl object-cover ring-1 ring-slate-200"
+                alt="current"
+              />
+
+              <div v-if="currentImageUrl" class="flex items-center gap-2">
+                <input id="remove_current_image" v-model="form.remove_current_image" type="checkbox" />
+                <label for="remove_current_image" class="text-sm font-semibold text-slate-700">
+                  حذف الصورة الحالية
+                </label>
+              </div>
+            </div>
           </div>
 
           <div>

@@ -8,6 +8,7 @@ use App\Models\ProductPriceHistory;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -70,7 +71,7 @@ class ProductController extends Controller
             'product_code' => ['required', 'string', 'max:255'],
             'barcode' => ['nullable', 'string', 'max:255'],
             'unit_name' => ['required', 'string', 'max:100'],
-            'image_path' => ['nullable', 'string', 'max:255'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'current_price' => ['required', 'numeric', 'min:0'],
             'last_purchase_price' => ['nullable', 'numeric', 'min:0'],
             'minimum_stock' => ['nullable', 'numeric', 'min:0'],
@@ -130,19 +131,25 @@ class ProductController extends Controller
             }
         }
 
-        DB::transaction(function () use ($data, $name, $productCode, $barcode) {
+        DB::transaction(function () use ($request, $data, $name, $productCode, $barcode) {
+            $imagePath = null;
+
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('products', 'public');
+            }
+
             $product = Product::create([
                 'category_id' => $data['category_id'] ?? null,
                 'name' => $name,
                 'product_code' => $productCode,
                 'barcode' => $barcode,
                 'unit_name' => trim($data['unit_name']),
-                'image_path' => $data['image_path'] ?? null,
+                'image_path' => $imagePath,
                 'current_price' => $data['current_price'],
                 'last_purchase_price' => $data['last_purchase_price'] ?? 0,
                 'minimum_stock' => $data['minimum_stock'] ?? 0,
-                'is_service' => $data['is_service'] ?? false,
-                'is_active' => $data['is_active'] ?? true,
+                'is_service' => $request->boolean('is_service'),
+                'is_active' => $request->boolean('is_active', true),
                 'is_deleted' => false,
                 'notes' => $data['notes'] ?? null,
             ]);
@@ -175,7 +182,8 @@ class ProductController extends Controller
             'product_code' => ['required', 'string', 'max:255'],
             'barcode' => ['nullable', 'string', 'max:255'],
             'unit_name' => ['required', 'string', 'max:100'],
-            'image_path' => ['nullable', 'string', 'max:255'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'remove_current_image' => ['nullable', 'boolean'],
             'current_price' => ['required', 'numeric', 'min:0'],
             'last_purchase_price' => ['nullable', 'numeric', 'min:0'],
             'minimum_stock' => ['nullable', 'numeric', 'min:0'],
@@ -226,9 +234,23 @@ class ProductController extends Controller
             }
         }
 
-        DB::transaction(function () use ($product, $data, $name, $productCode, $barcode) {
+        DB::transaction(function () use ($request, $product, $data, $name, $productCode, $barcode) {
             $oldPrice = (float) $product->current_price;
             $newPrice = (float) $data['current_price'];
+            $imagePath = $product->image_path;
+
+            if ($request->boolean('remove_current_image') && $product->image_path) {
+                Storage::disk('public')->delete($product->image_path);
+                $imagePath = null;
+            }
+
+            if ($request->hasFile('image')) {
+                if ($product->image_path) {
+                    Storage::disk('public')->delete($product->image_path);
+                }
+
+                $imagePath = $request->file('image')->store('products', 'public');
+            }
 
             $product->update([
                 'category_id' => $data['category_id'] ?? null,
@@ -236,12 +258,12 @@ class ProductController extends Controller
                 'product_code' => $productCode,
                 'barcode' => $barcode,
                 'unit_name' => trim($data['unit_name']),
-                'image_path' => $data['image_path'] ?? null,
+                'image_path' => $imagePath,
                 'current_price' => $newPrice,
                 'last_purchase_price' => $data['last_purchase_price'] ?? 0,
                 'minimum_stock' => $data['minimum_stock'] ?? 0,
-                'is_service' => $data['is_service'] ?? false,
-                'is_active' => $data['is_active'] ?? true,
+                'is_service' => $request->boolean('is_service'),
+                'is_active' => $request->boolean('is_active', true),
                 'notes' => $data['notes'] ?? null,
             ]);
 

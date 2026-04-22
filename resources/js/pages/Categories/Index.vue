@@ -13,6 +13,8 @@ const props = defineProps({
 })
 
 const search = ref(props.filters?.search ?? '')
+const deleteModalOpen = ref(false)
+const categoryToDelete = ref(null)
 
 watch(search, (value) => {
   router.get(
@@ -28,11 +30,24 @@ watch(search, (value) => {
 
 const categoriesData = computed(() => props.categories?.data ?? [])
 
-const deleteCategory = (category) => {
-  if (!confirm(`هل أنت متأكدة من حذف الفئة "${category.name}"؟`)) return
+const openDeleteModal = (category) => {
+  categoryToDelete.value = category
+  deleteModalOpen.value = true
+}
 
-  router.delete(`/categories/${category.id}`, {
+const closeDeleteModal = () => {
+  categoryToDelete.value = null
+  deleteModalOpen.value = false
+}
+
+const confirmDeleteCategory = () => {
+  if (!categoryToDelete.value) return
+
+  router.delete(`/categories/${categoryToDelete.value.id}`, {
     preserveScroll: true,
+    onFinish: () => {
+      closeDeleteModal()
+    },
   })
 }
 </script>
@@ -105,7 +120,7 @@ const deleteCategory = (category) => {
                     <Link :href="`/categories/${category.id}/edit`">
                       <BaseButton label="تعديل" color="warning" small />
                     </Link>
-                    <BaseButton label="حذف" color="danger" small @click="deleteCategory(category)" />
+                    <BaseButton label="حذف" color="danger" small @click="openDeleteModal(category)" />
                   </div>
                 </td>
               </tr>
@@ -119,6 +134,27 @@ const deleteCategory = (category) => {
           </table>
         </div>
       </CardBox>
+    </div>
+
+    <div
+      v-if="deleteModalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+    >
+      <div class="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
+        <div class="mb-4">
+          <h2 class="text-xl font-black text-slate-800">تأكيد الحذف</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-600">
+            هل أنت متأكدة من حذف الفئة
+            <span class="font-bold text-slate-800">"{{ categoryToDelete?.name }}"</span>
+            ؟
+          </p>
+        </div>
+
+        <div class="flex justify-end gap-3">
+          <BaseButton label="إلغاء" color="light" @click="closeDeleteModal" />
+          <BaseButton label="تأكيد الحذف" color="danger" @click="confirmDeleteCategory" />
+        </div>
+      </div>
     </div>
   </MainLayout>
 </template>
