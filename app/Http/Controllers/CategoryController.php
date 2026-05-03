@@ -10,8 +10,17 @@ use Inertia\Response;
 
 class CategoryController extends Controller
 {
+    private function authorizePermission(string $permission, string $message): void
+    {
+        if (!auth()->user()?->hasPermission($permission)) {
+            abort(403, $message);
+        }
+    }
+
     public function index(Request $request): Response
     {
+        $this->authorizePermission('categories.view', 'ليس لديك صلاحية لعرض الفئات.');
+
         $search = trim((string) $request->get('search', ''));
 
         $query = Category::query();
@@ -34,16 +43,25 @@ class CategoryController extends Controller
             'filters' => [
                 'search' => $search,
             ],
+            'permissions' => [
+                'canCreate' => auth()->user()?->hasPermission('categories.create') ?? false,
+                'canUpdate' => auth()->user()?->hasPermission('categories.update') ?? false,
+                'canDelete' => auth()->user()?->hasPermission('categories.delete') ?? false,
+            ],
         ]);
     }
 
     public function create(): Response
     {
+        $this->authorizePermission('categories.create', 'ليس لديك صلاحية لإضافة فئة.');
+
         return Inertia::render('Categories/Create');
     }
 
     public function store(Request $request): RedirectResponse
     {
+        $this->authorizePermission('categories.create', 'ليس لديك صلاحية لإضافة فئة.');
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:255'],
@@ -56,6 +74,7 @@ class CategoryController extends Controller
         $code = strtoupper(trim($data['code']));
 
         $existingByName = Category::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
+
         if ($existingByName) {
             return back()->withErrors([
                 'name' => 'لا يمكن إضافة الفئة، لأن اسم الفئة "' . $existingByName->name . '" موجود بالفعل.',
@@ -63,6 +82,7 @@ class CategoryController extends Controller
         }
 
         $existingByCode = Category::whereRaw('LOWER(code) = ?', [mb_strtolower($code)])->first();
+
         if ($existingByCode) {
             return back()->withErrors([
                 'code' => 'لا يمكن إضافة الفئة، لأن رمز الفئة "' . $existingByCode->code . '" مستخدم بالفعل.',
@@ -82,6 +102,8 @@ class CategoryController extends Controller
 
     public function edit(Category $category): Response
     {
+        $this->authorizePermission('categories.update', 'ليس لديك صلاحية لتعديل الفئات.');
+
         return Inertia::render('Categories/Edit', [
             'category' => $category,
         ]);
@@ -89,6 +111,8 @@ class CategoryController extends Controller
 
     public function update(Request $request, Category $category): RedirectResponse
     {
+        $this->authorizePermission('categories.update', 'ليس لديك صلاحية لتعديل الفئات.');
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:255'],
@@ -133,6 +157,8 @@ class CategoryController extends Controller
 
     public function destroy(Category $category): RedirectResponse
     {
+        $this->authorizePermission('categories.delete', 'ليس لديك صلاحية لحذف الفئات.');
+
         if ($category->products()->exists()) {
             return back()->withErrors([
                 'delete' => 'لا يمكن حذف الفئة "' . $category->name . '" لأنها مرتبطة بمنتجات موجودة في النظام.',

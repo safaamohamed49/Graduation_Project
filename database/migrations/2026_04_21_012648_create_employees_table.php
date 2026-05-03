@@ -6,16 +6,22 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('employees', function (Blueprint $table) {
             $table->id();
             // المعرف الأساسي للموظف
 
-            $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
+            $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+            // ربط الموظف بحساب مستخدم (لو عنده حساب)
+
+            $table->foreignId('branch_id')
+                ->nullable()
+                ->constrained('branches')
+                ->nullOnDelete();
             // الفرع الذي يعمل فيه الموظف
 
             $table->string('name');
@@ -34,13 +40,13 @@ return new class extends Migration
             // الراتب الأساسي
 
             $table->unsignedBigInteger('account_id')->nullable();
-            // الحساب المحاسبي للموظف (نربطه لاحقًا مع accounts)
+            // الحساب المحاسبي (نربطه لاحقًا)
 
             $table->date('hire_date')->nullable();
             // تاريخ التوظيف
 
             $table->boolean('is_active')->default(true);
-            // هل الموظف شغال أو موقوف
+            // هل الموظف نشط
 
             $table->text('notes')->nullable();
             // ملاحظات
@@ -49,9 +55,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('employees');

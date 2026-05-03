@@ -4,85 +4,207 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class CustomerController extends Controller
 {
-    public function index(Request $request)
+    private function authorizePermission(string $permission, string $message): void
     {
-        $query = Customer::query()->where('is_deleted', 0);
+        if (!auth()->user()?->hasPermission($permission)) {
+            abort(403, $message);
+        }
+    }
 
-        if ($request->filled('search')) {
-            $search = $request->search;
+    public function index(Request $request): Response
+    {
+        $this->authorizePermission('customers.view', 'ليس لديك صلاحية لعرض العملاء.');
+
+        $search = trim((string) $request->get('search', ''));
+
+        $query = Customer::query()->where('is_deleted', false);
+
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
-        $customers = $query->orderByDesc('id')->paginate(15);
+        $customers = $query
+            ->orderByDesc('id')
+            ->paginate(15)
+            ->withQueryString();
 
-        return view('customers.index', compact('customers'));
+        return Inertia::render('Customers/Index', [
+            'customers' => $customers,
+            'filters' => [
+                'search' => $search,
+            ],
+            'permissions' => [
+                'canCreate' => auth()->user()?->hasPermission('customers.create') ?? false,
+                'canUpdate' => auth()->user()?->hasPermission('customers.update') ?? false,
+                'canDelete' => auth()->user()?->hasPermission('customers.delete') ?? false,
+            ],
+        ]);
     }
 
-    public function create()
+    public function create(): Response
     {
-        return view('customers.create');
+        $this->authorizePermission('customers.create', 'ليس لديك صلاحية لإضافة عميل.');
+
+        return Inertia::render('Customers/Create');
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
+        $this->authorizePermission('customers.create', 'ليس لديك صلاحية لإضافة عميل.');
+
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:customers,name'],
+            'name' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $data['is_deleted'] = 0;
-        $data['is_locked'] = 0;
+        $name = trim($data['name']);
+        $code = strtoupper(trim($data['code']));
 
-        Customer::create($data);
+        $existingByName = Customer::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
 
-        return redirect()->route('customers.index')->with('success', 'تمت إضافة العميل بنجاح.');
+        if ($existingByName) {
+            if ($existingByName->is_deleted) {
+                return back()->withErrors([
+                    'name' => 'يوجد عميل محذوف سابقًا بنفس الاسم "' . $existingByName->name . '". يفضل مراجعته بدل إنشاء عميل جديد.',
+                ])->withInput();
+            }
+
+            return back()->withErrors([
+                'name' => 'لا يمكن إضافة العميل، لأن الاسم "' . $existingByName->name . '" موجود بالفعل.',
+            ])->withInput();
+        }
+
+        $existingByCode = Customer::whereRaw('LOWER(code) = ?', [mb_strtolower($code)])->first();
+
+        if ($existingByCode) {
+            if ($existingByCode->is_deleted) {
+                return back()->withErrors([
+                    'code' => 'يوجد عميل محذوف سابقًا يستخدم الرمز "' . $existingByCode->code . '" واسمه "' . $existingByCode->name . '".',
+                ])->withInput();
+            }
+
+            return back()->withErrors([
+                'code' => 'لا يمكن إضافة العميل، لأن الرمز "' . $existingByCode->code . '" مستخدم بالفعل.',
+            ])->withInput();
+        }
+
+        Customer::create([
+            'branch_id' => auth()->user()?->branch_id,
+            'name' => $name,
+            'code' => $code,
+            'phone' => $data['phone'] ?? null,
+            'email' => $data['email'] ?? null,
+            'address' => $data['address'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'account_id' => null,
+            'is_active' => $request->boolean('is_active', true),
+            'is_deleted' => false,
+            'is_locked' => false,
+        ]);
+
+        return redirect('/customers')->with('success', 'تمت إضافة العميل بنجاح.');
     }
 
-    public function edit($id)
+    public function edit(Customer $customer): Response
     {
-        $customer = Customer::where('is_deleted', 0)->findOrFail($id);
+        $this->authorizePermission('customers.update', 'ليس لديك صلاحية لتعديل العملاء.');
 
-        return view('customers.edit', compact('customer'));
+        if ($customer->is_deleted) {
+            abort(404);
+        }
+
+        return Inertia::render('Customers/Edit', [
+            'customer' => $customer,
+        ]);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, Customer $customer): RedirectResponse
     {
-        $customer = Customer::findOrFail($id);
+        $this->authorizePermission('customers.update', 'ليس لديك صلاحية لتعديل العملاء.');
 
         if ($customer->is_locked) {
-            return redirect()->route('customers.index')->with('error', 'لا يمكن تعديل عميل مقفل.');
+            return back()->withErrors([
+                'edit' => 'لا يمكن تعديل عميل مقفل.',
+            ]);
         }
 
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:customers,name,' . $customer->id],
+            'name' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $customer->update($data);
+        $name = trim($data['name']);
+        $code = strtoupper(trim($data['code']));
 
-        return redirect()->route('customers.index')->with('success', 'تم تعديل العميل بنجاح.');
-    }
+        $existingByName = Customer::where('id', '!=', $customer->id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->first();
 
-    public function destroy($id)
-    {
-        $customer = Customer::findOrFail($id);
+        if ($existingByName) {
+            return back()->withErrors([
+                'name' => 'لا يمكن تعديل العميل، لأن الاسم "' . $existingByName->name . '" موجود بالفعل.',
+            ])->withInput();
+        }
 
-        if ($customer->is_locked) {
-            return redirect()->route('customers.index')->with('error', 'لا يمكن حذف عميل مقفل.');
+        $existingByCode = Customer::where('id', '!=', $customer->id)
+            ->whereRaw('LOWER(code) = ?', [mb_strtolower($code)])
+            ->first();
+
+        if ($existingByCode) {
+            return back()->withErrors([
+                'code' => 'لا يمكن تعديل العميل، لأن الرمز "' . $existingByCode->code . '" مستخدم بالفعل.',
+            ])->withInput();
         }
 
         $customer->update([
-            'is_deleted' => 1,
+            'name' => $name,
+            'code' => $code,
+            'phone' => $data['phone'] ?? null,
+            'email' => $data['email'] ?? null,
+            'address' => $data['address'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'is_active' => $request->boolean('is_active', true),
         ]);
 
-        return redirect()->route('customers.index')->with('success', 'تم حذف العميل بنجاح.');
+        return redirect('/customers')->with('success', 'تم تعديل العميل بنجاح.');
+    }
+
+    public function destroy(Customer $customer): RedirectResponse
+    {
+        $this->authorizePermission('customers.delete', 'ليس لديك صلاحية لحذف العملاء.');
+
+        if ($customer->is_locked) {
+            return back()->withErrors([
+                'delete' => 'لا يمكن حذف عميل مقفل.',
+            ]);
+        }
+
+        $customer->update([
+            'is_deleted' => true,
+            'is_active' => false,
+        ]);
+
+        return redirect('/customers')->with('success', 'تم حذف العميل منطقيًا بنجاح.');
     }
 }

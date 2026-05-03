@@ -31,12 +31,14 @@ class Partner extends Model
     ];
 
     public function paymentVouchers(): HasMany
-    {
-        return $this->hasMany(PaymentVoucher::class);
-    }
+      {
+             return $this->hasMany(PaymentVoucher::class, 'beneficiary_id')
+             ->where('beneficiary_type', 'partner');
+      }
 
-    public function receiptVouchers(): HasMany
-    {
-        return $this->hasMany(ReceiptVoucher::class);
-    }
+   public function receiptVouchers(): HasMany
+{
+    return $this->hasMany(ReceiptVoucher::class, 'beneficiary_id')
+        ->where('beneficiary_type', 'partner');
+}
 }

@@ -41,6 +41,10 @@ return new class extends Migration
             $table->string('image_path')->nullable();
             // مسار الصورة
 
+            // 🔥 هذا اللي كان ناقص
+            $table->json('extra_permissions')->nullable();
+            $table->json('denied_permissions')->nullable();
+
             $table->boolean('is_active')->default(true);
             // هل المستخدم فعال
 

@@ -26,6 +26,15 @@ class DatabaseSeeder extends Seeder
     {
         /*
         |--------------------------------------------------------------------------
+        | 1) الأدوار
+        |--------------------------------------------------------------------------
+        */
+        $this->call(RoleSeeder::class);
+
+        $adminRole = Role::where('code', 'admin')->first();
+
+        /*
+        |--------------------------------------------------------------------------
         | Helper لإنشاء حساب محاسبي
         |--------------------------------------------------------------------------
         */
@@ -55,91 +64,6 @@ class DatabaseSeeder extends Seeder
                 ]
             );
         };
-
-        /*
-        |--------------------------------------------------------------------------
-        | 1) الأدوار
-        |--------------------------------------------------------------------------
-        */
-        $roles = [
-            [
-                'name' => 'Admin',
-                'code' => 'ADMIN',
-                'permissions' => [
-                    'manage_system' => true,
-                    'manage_users' => true,
-                    'manage_accounts' => true,
-                    'manage_branches' => true,
-                    'manage_warehouses' => true,
-                    'manage_products' => true,
-                    'manage_sales' => true,
-                    'manage_purchases' => true,
-                    'manage_returns' => true,
-                    'manage_vouchers' => true,
-                    'view_reports' => true,
-                ],
-            ],
-            [
-                'name' => 'Manager',
-                'code' => 'MANAGER',
-                'permissions' => [
-                    'manage_products' => true,
-                    'manage_sales' => true,
-                    'manage_purchases' => true,
-                    'manage_returns' => true,
-                    'manage_vouchers' => true,
-                    'view_reports' => true,
-                ],
-            ],
-            [
-                'name' => 'Accountant',
-                'code' => 'ACCOUNTANT',
-                'permissions' => [
-                    'manage_accounts' => true,
-                    'manage_vouchers' => true,
-                    'view_reports' => true,
-                ],
-            ],
-            [
-                'name' => 'Cashier',
-                'code' => 'CASHIER',
-                'permissions' => [
-                    'manage_sales' => true,
-                    'manage_receipts' => true,
-                ],
-            ],
-            [
-                'name' => 'Storekeeper',
-                'code' => 'STOREKEEPER',
-                'permissions' => [
-                    'manage_products' => true,
-                    'manage_warehouses' => true,
-                    'manage_stock_transfers' => true,
-                ],
-            ],
-            [
-                'name' => 'Sales',
-                'code' => 'SALES',
-                'permissions' => [
-                    'manage_sales' => true,
-                    'view_products' => true,
-                ],
-            ],
-        ];
-
-        foreach ($roles as $role) {
-            Role::updateOrCreate(
-                ['code' => $role['code']],
-                [
-                    'name' => $role['name'],
-                    'permissions' => $role['permissions'],
-                    'is_active' => true,
-                    'notes' => null,
-                ]
-            );
-        }
-
-        $adminRole = Role::where('code', 'ADMIN')->first();
 
         /*
         |--------------------------------------------------------------------------
@@ -205,7 +129,7 @@ class DatabaseSeeder extends Seeder
         $partner2Capital = $createAccount($partnersCapitalParent->id, '3120', 'رأس مال الشريك 2', 'equity', 'credit', 3, false, true);
         $partner2Current = $createAccount($partnersCurrentParent->id, '3220', 'جاري الشريك 2', 'equity', 'debit', 3, false, true);
 
-        $partner1 = Partner::updateOrCreate(
+        Partner::updateOrCreate(
             ['name' => 'الشريك الأول'],
             [
                 'phone' => null,
@@ -221,7 +145,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        $partner2 = Partner::updateOrCreate(
+        Partner::updateOrCreate(
             ['name' => 'الشريك الثاني'],
             [
                 'phone' => null,
@@ -242,7 +166,7 @@ class DatabaseSeeder extends Seeder
         | 5) الحسابات المالية (الخزائن والبنوك)
         |--------------------------------------------------------------------------
         */
-        $mainCashbox = FinancialAccount::updateOrCreate(
+        FinancialAccount::updateOrCreate(
             ['code' => 'CASH-MAIN'],
             [
                 'branch_id' => $mainBranch->id,
@@ -256,7 +180,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        $mainBank = FinancialAccount::updateOrCreate(
+        FinancialAccount::updateOrCreate(
             ['code' => 'BANK-MAIN'],
             [
                 'branch_id' => $mainBranch->id,
@@ -275,7 +199,7 @@ class DatabaseSeeder extends Seeder
         | 6) المخزن الرئيسي
         |--------------------------------------------------------------------------
         */
-        $mainWarehouse = Warehouse::updateOrCreate(
+        Warehouse::updateOrCreate(
             ['code' => 'MAIN-WH'],
             [
                 'branch_id' => $mainBranch->id,
@@ -354,6 +278,8 @@ class DatabaseSeeder extends Seeder
                 'address' => null,
                 'salary' => null,
                 'image_path' => null,
+                'extra_permissions' => [],
+                'denied_permissions' => [],
                 'is_active' => true,
                 'is_deleted' => false,
                 'is_locked' => false,

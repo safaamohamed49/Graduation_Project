@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
@@ -22,6 +23,8 @@ class User extends Authenticatable
         'address',
         'salary',
         'image_path',
+        'extra_permissions',
+        'denied_permissions',
         'is_active',
         'is_deleted',
         'is_locked',
@@ -38,6 +41,8 @@ class User extends Authenticatable
         'branch_id' => 'integer',
         'role_id' => 'integer',
         'salary' => 'decimal:2',
+        'extra_permissions' => 'array',
+        'denied_permissions' => 'array',
         'is_active' => 'boolean',
         'is_deleted' => 'boolean',
         'is_locked' => 'boolean',
@@ -53,6 +58,11 @@ class User extends Authenticatable
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
+    }
+
+    public function employee(): HasOne
+    {
+        return $this->hasOne(Employee::class);
     }
 
     public function managedBranches(): HasMany
@@ -93,5 +103,39 @@ class User extends Authenticatable
     public function journalEntries(): HasMany
     {
         return $this->hasMany(JournalEntry::class, 'created_by_user_id');
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        $rolePermissions = $this->role?->permissions ?? [];
+        $extraPermissions = $this->extra_permissions ?? [];
+        $deniedPermissions = $this->denied_permissions ?? [];
+
+        if (in_array($permission, $deniedPermissions, true)) {
+            return false;
+        }
+
+        if (in_array('*', $rolePermissions, true) || in_array('*', $extraPermissions, true)) {
+            return true;
+        }
+
+        return in_array($permission, $rolePermissions, true)
+            || in_array($permission, $extraPermissions, true);
+    }
+
+    public function permissionsList(): array
+    {
+        $rolePermissions = $this->role?->permissions ?? [];
+        $extraPermissions = $this->extra_permissions ?? [];
+        $deniedPermissions = $this->denied_permissions ?? [];
+
+        if (in_array('*', $rolePermissions, true) || in_array('*', $extraPermissions, true)) {
+            return ['*'];
+        }
+
+        return array_values(array_diff(
+            array_unique(array_merge($rolePermissions, $extraPermissions)),
+            $deniedPermissions
+        ));
     }
 }

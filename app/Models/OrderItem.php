@@ -28,7 +28,18 @@ class OrderItem extends Model
         'profit' => 'decimal:2',
     ];
 
-    public function order(): BelongsTo { return $this->belongsTo(Order::class); }
-    public function product(): BelongsTo { return $this->belongsTo(Product::class); }
-    public function batches(): HasMany { return $this->hasMany(OrderItemBatch::class); }
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    public function batches(): HasMany
+    {
+        return $this->hasMany(OrderItemBatch::class);
+    }
 }

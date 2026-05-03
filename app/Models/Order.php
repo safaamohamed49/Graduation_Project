@@ -11,6 +11,7 @@ class Order extends Model
     protected $fillable = [
         'order_number',
         'branch_id',
+        'warehouse_id',
         'customer_id',
         'order_date',
         'subtotal',
@@ -29,6 +30,7 @@ class Order extends Model
 
     protected $casts = [
         'branch_id' => 'integer',
+        'warehouse_id' => 'integer',
         'customer_id' => 'integer',
         'journal_entry_id' => 'integer',
         'user_id' => 'integer',
@@ -42,7 +44,23 @@ class Order extends Model
         'is_deleted' => 'boolean',
     ];
 
-    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
-    public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
-    public function items(): HasMany { return $this->hasMany(OrderItem::class); }
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
 }
