@@ -14,6 +14,9 @@ use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentVoucherController;
+use App\Http\Controllers\StockTransferController;
+use App\Http\Controllers\ReceiptVoucherController;
+use App\Http\Controllers\GeneralLedgerController;
 
 
 Route::get('/', function () {
@@ -72,5 +75,22 @@ Route::middleware('auth')->group(function () {
     'store',
     'show',
 ]);
-
+Route::resource('stock-transfers', StockTransferController::class)->only([
+    'index',
+    'create',
+    'store',
+    'show',
+]);
+Route::post('/receipt-vouchers/{receiptVoucher}/cancel', [ReceiptVoucherController::class, 'cancel'])
+    ->name('receipt-vouchers.cancel');
+Route::resource('receipt-vouchers', ReceiptVoucherController::class)->only([
+    'index',
+    'create',
+    'store',
+    'show',
+    'edit',
+    'update',
+]);
+Route::get('/general-ledger', [GeneralLedgerController::class, 'index'])
+    ->name('general-ledger.index');
 });

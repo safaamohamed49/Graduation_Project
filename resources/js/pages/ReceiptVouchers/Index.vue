@@ -9,44 +9,33 @@ import PageHero from '@/Components/App/PageHero.vue'
 import EntityToolbar from '@/Components/App/EntityToolbar.vue'
 
 const props = defineProps({
-  paymentVouchers: Object,
+  receiptVouchers: Object,
   filters: Object,
   permissions: Object,
 })
 
 const search = ref(props.filters?.search ?? '')
-const vouchersData = computed(() => props.paymentVouchers?.data ?? [])
+const vouchersData = computed(() => props.receiptVouchers?.data ?? [])
 
 const totalAmount = computed(() => {
   return vouchersData.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
 })
 
-const beneficiaryTypeLabel = (type) => {
+const receivedFromTypeLabel = (type) => {
   const labels = {
-    supplier: 'مورد',
     customer: 'عميل',
+    supplier: 'مورد',
     employee: 'موظف',
-    salary: 'راتب',
     partner: 'شريك',
-    expense: 'مصروف عام',
+    other: 'أخرى',
   }
 
   return labels[type] || '-'
 }
 
-const statusLabel = (status) => {
-  const labels = {
-    posted: 'مرحل',
-    draft: 'مسودة',
-    cancelled: 'ملغي',
-  }
-
-  return labels[status] || '-'
-}
-
 const submitSearch = () => {
   router.get(
-    '/payment-vouchers',
+    '/receipt-vouchers',
     { search: search.value },
     {
       preserveState: true,
@@ -58,27 +47,27 @@ const submitSearch = () => {
 </script>
 
 <template>
-  <MainLayout title="إيصالات الصرف">
+  <MainLayout title="إيصالات القبض">
     <div class="space-y-6">
       <PageHero
-        badge="الخزينة / الصرف"
-        title="إيصالات الصرف"
-        description="إدارة عمليات الصرف من الخزينة أو البنك مع توليد قيد محاسبي مزدوج تلقائياً."
-        gradient-class="bg-gradient-to-br from-rose-900 via-slate-900 to-orange-800"
+        badge="الخزينة / القبض"
+        title="إيصالات القبض"
+        description="إدارة عمليات القبض في الخزينة أو البنك مع توليد قيد محاسبي مزدوج تلقائياً."
+        gradient-class="bg-gradient-to-br from-emerald-900 via-slate-900 to-cyan-800"
       />
 
       <section class="grid gap-4 md:grid-cols-3">
         <div class="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div class="text-sm font-bold text-slate-500">عدد الإيصالات</div>
           <div class="mt-3 text-3xl font-black text-slate-800">
-            {{ props.paymentVouchers?.total ?? 0 }}
+            {{ props.receiptVouchers?.total ?? 0 }}
           </div>
-          <div class="mt-2 text-xs text-slate-400">إجمالي إيصالات الصرف</div>
+          <div class="mt-2 text-xs text-slate-400">إجمالي إيصالات القبض</div>
         </div>
 
         <div class="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div class="text-sm font-bold text-slate-500">إجمالي الصفحة</div>
-          <div class="mt-3 text-3xl font-black text-rose-700">
+          <div class="mt-3 text-3xl font-black text-emerald-700">
             {{ totalAmount.toFixed(2) }}
           </div>
           <div class="mt-2 text-xs text-slate-400">حسب الإيصالات الظاهرة فقط</div>
@@ -86,21 +75,21 @@ const submitSearch = () => {
 
         <div class="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div class="text-sm font-bold text-slate-500">نوع الحركة</div>
-          <div class="mt-3 text-3xl font-black text-orange-700">صرف</div>
-          <div class="mt-2 text-xs text-slate-400">الخزينة / البنك دائماً دائن</div>
+          <div class="mt-3 text-3xl font-black text-cyan-700">قبض</div>
+          <div class="mt-2 text-xs text-slate-400">الخزينة / البنك دائماً مدين</div>
         </div>
       </section>
 
       <EntityToolbar
         v-model="search"
-        placeholder="ابحثي برقم الإيصال أو الوصف أو نوع المستفيد"
-        :create-href="props.permissions?.canCreate ? '/payment-vouchers/create' : null"
-        create-label="إضافة إيصال صرف"
+        placeholder="ابحثي برقم الإيصال أو الوصف أو نوع المقبوض منه"
+        :create-href="props.permissions?.canCreate ? '/receipt-vouchers/create' : null"
+        create-label="إضافة إيصال قبض"
         @search="submitSearch"
       />
 
       <CardBox>
-        <CardBoxComponentHeader title="قائمة إيصالات الصرف" />
+        <CardBoxComponentHeader title="قائمة إيصالات القبض" />
 
         <div class="overflow-x-auto">
           <table class="min-w-full text-right">
@@ -110,8 +99,8 @@ const submitSearch = () => {
                 <th class="px-4 py-4 font-black">رقم الإيصال</th>
                 <th class="px-4 py-4 font-black">التاريخ</th>
                 <th class="px-4 py-4 font-black">الفرع</th>
-                <th class="px-4 py-4 font-black">من حساب</th>
-                <th class="px-4 py-4 font-black">نوع المستفيد</th>
+                <th class="px-4 py-4 font-black">إلى حساب</th>
+                <th class="px-4 py-4 font-black">المقبوض من</th>
                 <th class="px-4 py-4 font-black">المبلغ</th>
                 <th class="px-4 py-4 font-black">الحالة</th>
                 <th class="px-4 py-4 font-black">الإجراءات</th>
@@ -125,7 +114,7 @@ const submitSearch = () => {
                 class="border-t text-sm text-slate-700 transition hover:bg-slate-50/80"
               >
                 <td class="px-4 py-4">
-                  {{ ((props.paymentVouchers.current_page - 1) * props.paymentVouchers.per_page) + index + 1 }}
+                  {{ ((props.receiptVouchers.current_page - 1) * props.receiptVouchers.per_page) + index + 1 }}
                 </td>
 
                 <td class="px-4 py-4 font-black text-slate-800">
@@ -148,35 +137,31 @@ const submitSearch = () => {
                 </td>
 
                 <td class="px-4 py-4">
-                  {{ beneficiaryTypeLabel(voucher.beneficiary_type) }}
+                  {{ receivedFromTypeLabel(voucher.received_from_type) }}
                 </td>
 
-                <td class="px-4 py-4 font-black text-rose-700">
+                <td class="px-4 py-4 font-black text-emerald-700">
                   {{ Number(voucher.amount || 0).toFixed(2) }}
                 </td>
 
                 <td class="px-4 py-4">
                   <span
                     class="rounded-full px-3 py-1 text-xs font-bold"
-                    :class="voucher.status === 'cancelled'
-                      ? 'bg-rose-100 text-rose-700'
-                      : voucher.status === 'posted'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-amber-100 text-amber-700'"
+                    :class="voucher.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
                   >
-                    {{ statusLabel(voucher.status) }}
+                    {{ voucher.status === 'posted' ? 'مرحل' : 'مسودة' }}
                   </span>
                 </td>
 
                 <td class="px-4 py-4">
                   <div class="flex flex-wrap gap-2">
-                    <Link :href="`/payment-vouchers/${voucher.id}`">
+                    <Link :href="`/receipt-vouchers/${voucher.id}`">
                       <BaseButton label="عرض" color="info" small />
                     </Link>
 
                     <Link
                       v-if="props.permissions?.canUpdate && voucher.status !== 'cancelled'"
-                      :href="`/payment-vouchers/${voucher.id}/edit`"
+                      :href="`/receipt-vouchers/${voucher.id}/edit`"
                     >
                       <BaseButton label="تعديل" color="warning" small />
                     </Link>
@@ -186,7 +171,7 @@ const submitSearch = () => {
 
               <tr v-if="!vouchersData.length">
                 <td colspan="9" class="px-4 py-14 text-center text-sm text-slate-500">
-                  لا توجد إيصالات صرف مطابقة.
+                  لا توجد إيصالات قبض مطابقة.
                 </td>
               </tr>
             </tbody>
@@ -194,14 +179,14 @@ const submitSearch = () => {
         </div>
       </CardBox>
 
-      <section v-if="props.paymentVouchers.links?.length > 3" class="flex flex-wrap gap-2">
+      <section v-if="props.receiptVouchers.links?.length > 3" class="flex flex-wrap gap-2">
         <button
-          v-for="link in props.paymentVouchers.links"
+          v-for="link in props.receiptVouchers.links"
           :key="link.label"
           class="rounded-2xl border px-4 py-2 text-sm font-semibold transition"
           :class="[
             link.active
-              ? 'border-rose-600 bg-rose-600 text-white'
+              ? 'border-emerald-600 bg-emerald-600 text-white'
               : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
             !link.url ? 'cursor-not-allowed opacity-50' : ''
           ]"

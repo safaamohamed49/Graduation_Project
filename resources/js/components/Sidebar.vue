@@ -100,7 +100,14 @@ const can = (permission) => {
         >
           المخازن
         </Link>
-
+        <Link
+          v-if="can('warehouses.transfer')"
+          href="/stock-transfers"
+          class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
+          :class="currentUrl.startsWith('/stock-transfers') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
+        >
+        النقل بين المخازن
+       </Link>
         <Link
           v-if="can('customers.view')"
           href="/customers"
@@ -184,15 +191,22 @@ const can = (permission) => {
   إيصالات الصرف
 </Link>
 
-        <Link
-          v-if="can('receipts.view')"
-          href="/receipts"
-          class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
-          :class="currentUrl.startsWith('/receipts') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
-        >
-          سندات القبض
-        </Link>
-
+       <Link
+  v-if="can('receipts.view')"
+  href="/receipt-vouchers"
+  class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
+  :class="currentUrl.startsWith('/receipt-vouchers') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
+>
+  إيصالات القبض
+</Link>
+<Link
+  v-if="can('reports.view')"
+  href="/general-ledger"
+  class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
+  :class="currentUrl.startsWith('/general-ledger') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
+>
+  دفتر الأستاذ
+</Link>
         <Link
           v-if="can('reports.view')"
           href="/reports"
@@ -201,6 +215,7 @@ const can = (permission) => {
         >
           التقارير
         </Link>
+
       </div>
     </nav>
 

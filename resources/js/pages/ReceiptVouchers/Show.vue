@@ -7,21 +7,20 @@ import BaseButton from '@/Components/BaseButton.vue'
 import PageHero from '@/Components/App/PageHero.vue'
 
 const props = defineProps({
-  paymentVoucher: Object,
+  receiptVoucher: Object,
   reverseEntry: Object,
   permissions: Object,
-  beneficiaryName: String,
+  receivedFromName: String,
   amountInWords: String,
 })
 
-const beneficiaryTypeLabel = (type) => {
+const receivedFromTypeLabel = (type) => {
   const labels = {
-    supplier: 'مورد',
     customer: 'عميل',
+    supplier: 'مورد',
     employee: 'موظف',
-    salary: 'راتب',
     partner: 'شريك',
-    expense: 'مصروف عام',
+    other: 'أخرى',
   }
 
   return labels[type] || '-'
@@ -46,26 +45,26 @@ const cancelVoucher = () => {
     return
   }
 
-  router.post(`/payment-vouchers/${props.paymentVoucher.id}/cancel`, {}, {
+  router.post(`/receipt-vouchers/${props.receiptVoucher.id}/cancel`, {}, {
     preserveScroll: true,
   })
 }
 </script>
 
 <template>
-  <MainLayout :title="props.paymentVoucher.voucher_number">
+  <MainLayout :title="props.receiptVoucher.voucher_number">
     <div class="space-y-6">
       <div class="no-print">
         <PageHero
-          badge="تفاصيل إيصال الصرف"
-          :title="props.paymentVoucher.voucher_number"
-          description="عرض تفاصيل إيصال الصرف والقيد المحاسبي المرتبط به."
-          gradient-class="bg-gradient-to-br from-rose-900 via-slate-900 to-orange-800"
+          badge="تفاصيل إيصال القبض"
+          :title="props.receiptVoucher.voucher_number"
+          description="عرض تفاصيل إيصال القبض والقيد المحاسبي المرتبط به."
+          gradient-class="bg-gradient-to-br from-emerald-900 via-slate-900 to-cyan-800"
         />
       </div>
 
       <div class="no-print flex flex-wrap justify-end gap-3">
-        <Link href="/payment-vouchers">
+        <Link href="/receipt-vouchers">
           <BaseButton label="رجوع" color="light" />
         </Link>
 
@@ -73,7 +72,7 @@ const cancelVoucher = () => {
 
         <Link
           v-if="props.permissions?.canUpdate"
-          :href="`/payment-vouchers/${props.paymentVoucher.id}/edit`"
+          :href="`/receipt-vouchers/${props.receiptVoucher.id}/edit`"
         >
           <BaseButton label="تعديل الإيصال" color="warning" />
         </Link>
@@ -92,20 +91,20 @@ const cancelVoucher = () => {
             <div class="company-block">
               <div class="company-name">بنيس للحديد الصناعي</div>
               <div class="company-subtitle">
-                الفرع المصدر للإيصال: {{ props.paymentVoucher.branch?.name || '-' }}
+                الفرع المصدر للإيصال: {{ props.receiptVoucher.branch?.name || '-' }}
               </div>
             </div>
 
             <div class="voucher-title-block">
-              <div class="voucher-title">إيصال صرف</div>
-              <div class="voucher-title-en">PAYMENT VOUCHER</div>
+              <div class="voucher-title">إيصال قبض</div>
+              <div class="voucher-title-en">RECEIPT VOUCHER</div>
             </div>
 
             <div class="voucher-number-block">
               <div class="small-label">رقم الإيصال</div>
-              <div class="voucher-number">{{ props.paymentVoucher.voucher_number }}</div>
+              <div class="voucher-number">{{ props.receiptVoucher.voucher_number }}</div>
               <div
-                v-if="props.paymentVoucher.status === 'cancelled'"
+                v-if="props.receiptVoucher.status === 'cancelled'"
                 class="cancel-stamp"
               >
                 ملغي
@@ -117,37 +116,37 @@ const cancelVoucher = () => {
             <div class="voucher-cell">
               <span>التاريخ</span>
               <strong>
-                {{ props.paymentVoucher.voucher_date ? new Date(props.paymentVoucher.voucher_date).toLocaleDateString('en-GB') : '-' }}
+                {{ props.receiptVoucher.voucher_date ? new Date(props.receiptVoucher.voucher_date).toLocaleDateString('en-GB') : '-' }}
               </strong>
             </div>
 
             <div class="voucher-cell">
-              <span>طريقة الدفع</span>
-              <strong>{{ props.paymentVoucher.payment_method?.name || '-' }}</strong>
+              <span>طريقة القبض</span>
+              <strong>{{ props.receiptVoucher.payment_method?.name || '-' }}</strong>
             </div>
 
             <div class="voucher-cell">
               <span>الخزينة / البنك</span>
-              <strong>{{ props.paymentVoucher.financial_account?.name || '-' }}</strong>
+              <strong>{{ props.receiptVoucher.financial_account?.name || '-' }}</strong>
             </div>
           </div>
 
           <div class="voucher-row two">
             <div class="voucher-cell">
-              <span>صرفنا إلى السيد / الجهة</span>
-              <strong>{{ props.beneficiaryName || '-' }}</strong>
+              <span>استلمنا من السيد / الجهة</span>
+              <strong>{{ props.receivedFromName || '-' }}</strong>
             </div>
 
             <div class="voucher-cell">
-              <span>نوع الصرف</span>
-              <strong>{{ beneficiaryTypeLabel(props.paymentVoucher.beneficiary_type) }}</strong>
+              <span>نوع المقبوض منه</span>
+              <strong>{{ receivedFromTypeLabel(props.receiptVoucher.received_from_type) }}</strong>
             </div>
           </div>
 
           <div class="amount-line">
             <div class="amount-box">
               <span>المبلغ رقماً</span>
-              <strong>{{ Number(props.paymentVoucher.amount || 0).toFixed(2) }} د.ل</strong>
+              <strong>{{ Number(props.receiptVoucher.amount || 0).toFixed(2) }} د.ل</strong>
             </div>
 
             <div class="words-box">
@@ -158,34 +157,34 @@ const cancelVoucher = () => {
 
           <div class="voucher-cell description-cell">
             <span>البيان</span>
-            <strong class="whitespace-pre-line">{{ props.paymentVoucher.description || '-' }}</strong>
+            <strong class="whitespace-pre-line">{{ props.receiptVoucher.description || '-' }}</strong>
           </div>
 
           <div class="accounting-strip">
             <div>
               <span>الحساب المدين</span>
-              <strong>{{ props.paymentVoucher.account?.name || '-' }}</strong>
+              <strong>{{ props.receiptVoucher.financial_account?.name || '-' }}</strong>
             </div>
 
             <div>
               <span>الحساب الدائن</span>
-              <strong>{{ props.paymentVoucher.financial_account?.name || '-' }}</strong>
+              <strong>{{ props.receiptVoucher.account?.name || '-' }}</strong>
             </div>
 
             <div>
               <span>أعد الإيصال</span>
-              <strong>{{ props.paymentVoucher.created_by?.name || '-' }}</strong>
+              <strong>{{ props.receiptVoucher.created_by?.name || '-' }}</strong>
             </div>
           </div>
 
           <div class="signature-strip">
-            <div>توقيع المستلم</div>
+            <div>توقيع الدافع</div>
             <div>توقيع المحاسب</div>
             <div>اعتماد الإدارة</div>
           </div>
 
           <div class="footer-note">
-            هذا الإيصال صادر من فرع: {{ props.paymentVoucher.branch?.name || '-' }} — فقط لا يعتمد إلا بتوقيع المخولين.
+            هذا الإيصال صادر من فرع: {{ props.receiptVoucher.branch?.name || '-' }} — فقط لا يعتمد إلا بتوقيع المخولين.
           </div>
         </section>
 
@@ -205,7 +204,7 @@ const cancelVoucher = () => {
 
               <tbody>
                 <tr
-                  v-for="line in props.paymentVoucher.journal_entry?.lines || []"
+                  v-for="line in props.receiptVoucher.journal_entry?.lines || []"
                   :key="line.id"
                   class="border-t text-sm text-slate-700"
                 >
@@ -227,7 +226,7 @@ const cancelVoucher = () => {
                   </td>
                 </tr>
 
-                <tr v-if="!props.paymentVoucher.journal_entry?.lines?.length">
+                <tr v-if="!props.receiptVoucher.journal_entry?.lines?.length">
                   <td colspan="4" class="px-4 py-12 text-center text-sm text-slate-500">
                     لا يوجد قيد محاسبي مرتبط بهذا الإيصال.
                   </td>

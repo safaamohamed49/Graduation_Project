@@ -5,13 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\Customer;
 use App\Models\Employee;
-use App\Models\ExpenseCategory;
 use App\Models\FinancialAccount;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Models\Partner;
 use App\Models\PaymentMethod;
-use App\Models\PaymentVoucher;
+use App\Models\ReceiptVoucher;
 use App\Models\Supplier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class PaymentVoucherController extends Controller
+class ReceiptVoucherController extends Controller
 {
     private function authorizePermission(string $permission, string $message): void
     {
@@ -38,17 +37,16 @@ class PaymentVoucherController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorizePermission('payments.view', 'ليس لديك صلاحية لعرض إيصالات الصرف.');
+        $this->authorizePermission('receipts.view', 'ليس لديك صلاحية لعرض إيصالات القبض.');
 
         $user = auth()->user();
         $search = trim((string) $request->get('search', ''));
 
-        $query = PaymentVoucher::query()
+        $query = ReceiptVoucher::query()
             ->with([
                 'branch:id,name',
                 'financialAccount:id,name,code,type',
                 'paymentMethod:id,name,code',
-                'expenseCategory:id,name,code',
                 'account:id,name,code',
                 'createdBy:id,name',
             ])
@@ -61,18 +59,18 @@ class PaymentVoucherController extends Controller
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('voucher_number', 'like', "%{$search}%")
-                    ->orWhere('beneficiary_type', 'like', "%{$search}%")
+                    ->orWhere('received_from_type', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
-        return Inertia::render('PaymentVouchers/Index', [
-            'paymentVouchers' => $query->paginate(15)->withQueryString(),
+        return Inertia::render('ReceiptVouchers/Index', [
+            'receiptVouchers' => $query->paginate(15)->withQueryString(),
             'filters' => [
                 'search' => $search,
             ],
             'permissions' => [
-                'canCreate' => auth()->user()?->hasPermission('payments.create') ?? false,
+                'canCreate' => auth()->user()?->hasPermission('receipts.create') ?? false,
                 'canUpdate' => $this->isAdmin(),
             ],
         ]);
@@ -80,14 +78,14 @@ class PaymentVoucherController extends Controller
 
     public function create(): Response
     {
-        $this->authorizePermission('payments.create', 'ليس لديك صلاحية لإضافة إيصال صرف.');
+        $this->authorizePermission('receipts.create', 'ليس لديك صلاحية لإضافة إيصال قبض.');
 
-        return Inertia::render('PaymentVouchers/Create', $this->formData());
+        return Inertia::render('ReceiptVouchers/Create', $this->formData());
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $this->authorizePermission('payments.create', 'ليس لديك صلاحية لإضافة إيصال صرف.');
+        $this->authorizePermission('receipts.create', 'ليس لديك صلاحية لإضافة إيصال قبض.');
 
         $data = $this->validatedData($request);
         $user = auth()->user();
@@ -110,29 +108,28 @@ class PaymentVoucherController extends Controller
 
         if (!$branchId) {
             return back()->withErrors([
-                'financial_account_id' => 'لا يمكن تحديد فرع إيصال الصرف.',
+                'financial_account_id' => 'لا يمكن تحديد فرع إيصال القبض.',
             ])->withInput();
         }
 
-        $debitAccountId = $this->resolveDebitAccountId($data, (int) $branchId);
+        $creditAccountId = $this->resolveCreditAccountId($data, (int) $branchId);
 
-        if (!$debitAccountId) {
+        if (!$creditAccountId) {
             return back()->withErrors([
-                'account_id' => 'لم يتم تحديد الحساب المدين لهذا النوع من الصرف.',
+                'account_id' => 'لم يتم تحديد الحساب الدائن لهذا النوع من القبض.',
             ])->withInput();
         }
 
-        return DB::transaction(function () use ($data, $user, $branchId, $financialAccount, $debitAccountId) {
-            $voucher = PaymentVoucher::create([
+        return DB::transaction(function () use ($data, $user, $branchId, $financialAccount, $creditAccountId) {
+            $voucher = ReceiptVoucher::create([
                 'voucher_number' => $this->generateVoucherNumber(),
                 'voucher_date' => $data['voucher_date'],
                 'branch_id' => $branchId,
                 'financial_account_id' => $financialAccount->id,
                 'payment_method_id' => $data['payment_method_id'] ?? null,
-                'beneficiary_type' => $data['beneficiary_type'],
-                'beneficiary_id' => $data['beneficiary_id'] ?? null,
-                'expense_category_id' => $data['expense_category_id'] ?? null,
-                'account_id' => $debitAccountId,
+                'received_from_type' => $data['received_from_type'],
+                'received_from_id' => $data['received_from_id'] ?? null,
+                'account_id' => $creditAccountId,
                 'amount' => $data['amount'],
                 'description' => $data['description'] ?? null,
                 'reference_type' => null,
@@ -145,7 +142,7 @@ class PaymentVoucherController extends Controller
             $journalEntry = $this->createJournalEntryForVoucher(
                 voucher: $voucher,
                 financialAccount: $financialAccount,
-                debitAccountId: $debitAccountId,
+                creditAccountId: $creditAccountId,
                 data: $data,
                 branchId: (int) $branchId,
                 userId: (int) $user->id
@@ -156,22 +153,21 @@ class PaymentVoucherController extends Controller
             ]);
 
             return redirect()
-                ->route('payment-vouchers.index')
-                ->with('success', 'تم إنشاء إيصال الصرف والقيد المحاسبي بنجاح.');
+                ->route('receipt-vouchers.index')
+                ->with('success', 'تم إنشاء إيصال القبض والقيد المحاسبي بنجاح.');
         });
     }
 
-    public function show(PaymentVoucher $paymentVoucher): Response
+    public function show(ReceiptVoucher $receiptVoucher): Response
     {
-        $this->authorizePermission('payments.view', 'ليس لديك صلاحية لعرض إيصال الصرف.');
+        $this->authorizePermission('receipts.view', 'ليس لديك صلاحية لعرض إيصال القبض.');
 
-        $this->ensureVoucherAccess($paymentVoucher);
+        $this->ensureVoucherAccess($receiptVoucher);
 
-        $paymentVoucher->load([
+        $receiptVoucher->load([
             'branch:id,name',
             'financialAccount:id,name,code,type,account_id',
             'paymentMethod:id,name,code',
-            'expenseCategory:id,name,code',
             'account:id,name,code',
             'createdBy:id,name',
             'journalEntry.lines.account:id,name,code',
@@ -179,62 +175,61 @@ class PaymentVoucherController extends Controller
 
         $reverseEntry = JournalEntry::query()
             ->with('lines.account:id,name,code')
-            ->where('source_type', PaymentVoucher::class)
-            ->where('source_id', $paymentVoucher->id)
+            ->where('source_type', ReceiptVoucher::class)
+            ->where('source_id', $receiptVoucher->id)
             ->where('description', 'like', 'قيد عكسي%')
             ->latest('id')
             ->first();
 
-        return Inertia::render('PaymentVouchers/Show', [
-            'paymentVoucher' => $paymentVoucher,
+        return Inertia::render('ReceiptVouchers/Show', [
+            'receiptVoucher' => $receiptVoucher,
             'reverseEntry' => $reverseEntry,
-            'beneficiaryName' => $this->beneficiaryName($paymentVoucher),
-            'amountInWords' => $this->amountToArabicWords((float) $paymentVoucher->amount),
+            'receivedFromName' => $this->receivedFromName($receiptVoucher),
+            'amountInWords' => $this->amountToArabicWords((float) $receiptVoucher->amount),
             'permissions' => [
-                'canUpdate' => $this->isAdmin() && $paymentVoucher->status !== 'cancelled',
-                'canCancel' => $this->isAdmin() && $paymentVoucher->status === 'posted',
+                'canUpdate' => $this->isAdmin() && $receiptVoucher->status !== 'cancelled',
+                'canCancel' => $this->isAdmin() && $receiptVoucher->status === 'posted',
             ],
         ]);
     }
 
-    public function edit(PaymentVoucher $paymentVoucher): Response
+    public function edit(ReceiptVoucher $receiptVoucher): Response
     {
         if (!$this->isAdmin()) {
-            abort(403, 'تعديل إيصالات الصرف مسموح للأدمن فقط.');
+            abort(403, 'تعديل إيصالات القبض مسموح للأدمن فقط.');
         }
 
-        $this->ensureVoucherAccess($paymentVoucher);
+        $this->ensureVoucherAccess($receiptVoucher);
 
-        if ($paymentVoucher->status === 'cancelled') {
-            abort(403, 'لا يمكن تعديل إيصال صرف ملغي.');
+        if ($receiptVoucher->status === 'cancelled') {
+            abort(403, 'لا يمكن تعديل إيصال قبض ملغي.');
         }
 
-        $paymentVoucher->load([
+        $receiptVoucher->load([
             'branch:id,name',
             'financialAccount:id,name,code,type,account_id',
             'paymentMethod:id,name,code',
-            'expenseCategory:id,name,code',
             'account:id,name,code',
         ]);
 
-        return Inertia::render('PaymentVouchers/Edit', array_merge(
+        return Inertia::render('ReceiptVouchers/Edit', array_merge(
             [
-                'paymentVoucher' => $paymentVoucher,
+                'receiptVoucher' => $receiptVoucher,
             ],
             $this->formData()
         ));
     }
 
-    public function update(Request $request, PaymentVoucher $paymentVoucher): RedirectResponse
+    public function update(Request $request, ReceiptVoucher $receiptVoucher): RedirectResponse
     {
         if (!$this->isAdmin()) {
-            abort(403, 'تعديل إيصالات الصرف مسموح للأدمن فقط.');
+            abort(403, 'تعديل إيصالات القبض مسموح للأدمن فقط.');
         }
 
-        $this->ensureVoucherAccess($paymentVoucher);
+        $this->ensureVoucherAccess($receiptVoucher);
 
-        if ($paymentVoucher->status === 'cancelled') {
-            abort(403, 'لا يمكن تعديل إيصال صرف ملغي.');
+        if ($receiptVoucher->status === 'cancelled') {
+            abort(403, 'لا يمكن تعديل إيصال قبض ملغي.');
         }
 
         $data = $this->validatedData($request);
@@ -256,63 +251,62 @@ class PaymentVoucherController extends Controller
 
         if (!$branchId) {
             return back()->withErrors([
-                'financial_account_id' => 'لا يمكن تحديد فرع إيصال الصرف.',
+                'financial_account_id' => 'لا يمكن تحديد فرع إيصال القبض.',
             ])->withInput();
         }
 
-        $debitAccountId = $this->resolveDebitAccountId($data, (int) $branchId);
+        $creditAccountId = $this->resolveCreditAccountId($data, (int) $branchId);
 
-        if (!$debitAccountId) {
+        if (!$creditAccountId) {
             return back()->withErrors([
-                'account_id' => 'لم يتم تحديد الحساب المدين لهذا النوع من الصرف.',
+                'account_id' => 'لم يتم تحديد الحساب الدائن لهذا النوع من القبض.',
             ])->withInput();
         }
 
-        return DB::transaction(function () use ($paymentVoucher, $data, $user, $branchId, $financialAccount, $debitAccountId) {
-            $paymentVoucher->update([
+        return DB::transaction(function () use ($receiptVoucher, $data, $user, $branchId, $financialAccount, $creditAccountId) {
+            $receiptVoucher->update([
                 'voucher_date' => $data['voucher_date'],
                 'branch_id' => $branchId,
                 'financial_account_id' => $financialAccount->id,
                 'payment_method_id' => $data['payment_method_id'] ?? null,
-                'beneficiary_type' => $data['beneficiary_type'],
-                'beneficiary_id' => $data['beneficiary_id'] ?? null,
-                'expense_category_id' => $data['expense_category_id'] ?? null,
-                'account_id' => $debitAccountId,
+                'received_from_type' => $data['received_from_type'],
+                'received_from_id' => $data['received_from_id'] ?? null,
+                'account_id' => $creditAccountId,
                 'amount' => $data['amount'],
                 'description' => $data['description'] ?? null,
-                'created_by_user_id' => $paymentVoucher->created_by_user_id ?: $user->id,
+                'created_by_user_id' => $receiptVoucher->created_by_user_id ?: $user->id,
                 'status' => 'posted',
             ]);
 
-            $paymentVoucher->refresh();
+            $receiptVoucher->refresh();
 
-            if ($paymentVoucher->journalEntry) {
-                $paymentVoucher->journalEntry->lines()->delete();
+            if ($receiptVoucher->journalEntry) {
+                $receiptVoucher->journalEntry->lines()->delete();
 
-                $paymentVoucher->journalEntry->update([
+                $receiptVoucher->journalEntry->update([
                     'entry_date' => $data['voucher_date'],
                     'branch_id' => $branchId,
-                    'description' => 'قيد إيصال صرف رقم ' . $paymentVoucher->voucher_number,
-                    'source_type' => PaymentVoucher::class,
-                    'source_id' => $paymentVoucher->id,
+                    'description' => 'قيد إيصال قبض رقم ' . $receiptVoucher->voucher_number,
+                    'source_type' => ReceiptVoucher::class,
+                    'source_id' => $receiptVoucher->id,
                     'created_by_user_id' => $user->id,
                     'status' => 'posted',
                 ]);
 
-                $journalEntry = $paymentVoucher->journalEntry;
+                $journalEntry = $receiptVoucher->journalEntry;
             } else {
                 $journalEntry = JournalEntry::create([
                     'entry_number' => $this->generateJournalEntryNumber(),
                     'entry_date' => $data['voucher_date'],
                     'branch_id' => $branchId,
-                    'description' => 'قيد إيصال صرف رقم ' . $paymentVoucher->voucher_number,
-                    'source_type' => PaymentVoucher::class,
-                    'source_id' => $paymentVoucher->id,
+                    'description' => 'قيد إيصال قبض رقم ' . $receiptVoucher->voucher_number,
+                    'source_type' => ReceiptVoucher::class,
+                    'source_id' => $receiptVoucher->id,
                     'created_by_user_id' => $user->id,
                     'status' => 'posted',
                 ]);
 
-                $paymentVoucher->update([
+                $receiptVoucher->update([
                     'journal_entry_id' => $journalEntry->id,
                 ]);
             }
@@ -320,53 +314,53 @@ class PaymentVoucherController extends Controller
             $this->createJournalEntryLines(
                 journalEntry: $journalEntry,
                 financialAccount: $financialAccount,
-                debitAccountId: $debitAccountId,
+                creditAccountId: $creditAccountId,
                 data: $data
             );
 
             return redirect()
-                ->route('payment-vouchers.show', $paymentVoucher)
-                ->with('success', 'تم تعديل إيصال الصرف وتحديث القيد المحاسبي بنجاح.');
+                ->route('receipt-vouchers.show', $receiptVoucher)
+                ->with('success', 'تم تعديل إيصال القبض وتحديث القيد المحاسبي بنجاح.');
         });
     }
 
-    public function cancel(PaymentVoucher $paymentVoucher): RedirectResponse
+    public function cancel(ReceiptVoucher $receiptVoucher): RedirectResponse
     {
         if (!$this->isAdmin()) {
-            abort(403, 'إلغاء إيصالات الصرف مسموح للأدمن فقط.');
+            abort(403, 'إلغاء إيصالات القبض مسموح للأدمن فقط.');
         }
 
-        $this->ensureVoucherAccess($paymentVoucher);
+        $this->ensureVoucherAccess($receiptVoucher);
 
-        if ($paymentVoucher->status === 'cancelled') {
+        if ($receiptVoucher->status === 'cancelled') {
             return back()->withErrors([
                 'cancel' => 'هذا الإيصال ملغي بالفعل.',
             ]);
         }
 
-        $paymentVoucher->load('journalEntry.lines');
+        $receiptVoucher->load('journalEntry.lines');
 
-        if (!$paymentVoucher->journalEntry) {
+        if (!$receiptVoucher->journalEntry) {
             return back()->withErrors([
                 'cancel' => 'لا يمكن إلغاء الإيصال لأنه غير مربوط بقيد محاسبي.',
             ]);
         }
 
-        return DB::transaction(function () use ($paymentVoucher) {
+        return DB::transaction(function () use ($receiptVoucher) {
             $user = auth()->user();
 
             $reverseEntry = JournalEntry::create([
                 'entry_number' => $this->generateJournalEntryNumber(),
                 'entry_date' => now(),
-                'branch_id' => $paymentVoucher->branch_id,
-                'description' => 'قيد عكسي لإلغاء إيصال صرف رقم ' . $paymentVoucher->voucher_number,
-                'source_type' => PaymentVoucher::class,
-                'source_id' => $paymentVoucher->id,
+                'branch_id' => $receiptVoucher->branch_id,
+                'description' => 'قيد عكسي لإلغاء إيصال قبض رقم ' . $receiptVoucher->voucher_number,
+                'source_type' => ReceiptVoucher::class,
+                'source_id' => $receiptVoucher->id,
                 'created_by_user_id' => $user->id,
                 'status' => 'posted',
             ]);
 
-            foreach ($paymentVoucher->journalEntry->lines as $line) {
+            foreach ($receiptVoucher->journalEntry->lines as $line) {
                 JournalEntryLine::create([
                     'journal_entry_id' => $reverseEntry->id,
                     'account_id' => $line->account_id,
@@ -380,17 +374,17 @@ class PaymentVoucherController extends Controller
                 ]);
             }
 
-            $paymentVoucher->update([
+            $receiptVoucher->update([
                 'status' => 'cancelled',
                 'description' => trim(
-                    ($paymentVoucher->description ?? '') . "\n" .
+                    ($receiptVoucher->description ?? '') . "\n" .
                     'تم إلغاء الإيصال بقيد عكسي رقم ' . $reverseEntry->entry_number
                 ),
             ]);
 
             return redirect()
-                ->route('payment-vouchers.show', $paymentVoucher)
-                ->with('success', 'تم إلغاء إيصال الصرف وإنشاء القيد العكسي بنجاح.');
+                ->route('receipt-vouchers.show', $receiptVoucher)
+                ->with('success', 'تم إلغاء إيصال القبض وإنشاء القيد العكسي بنجاح.');
         });
     }
 
@@ -400,9 +394,9 @@ class PaymentVoucherController extends Controller
             'voucher_date' => ['required', 'date'],
             'financial_account_id' => ['required', 'integer', 'exists:financial_accounts,id'],
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
-            'beneficiary_type' => ['required', 'string', 'in:supplier,customer,employee,salary,partner,expense'],
-            'beneficiary_id' => ['nullable', 'integer'],
-            'expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
+            'received_from_type' => ['required', 'string', 'in:customer,supplier,employee,partner,other'],
+            'received_from_id' => ['nullable', 'integer'],
+            'account_id' => ['nullable', 'integer', 'exists:accounts,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string'],
         ]);
@@ -424,19 +418,14 @@ class PaymentVoucherController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'code']),
 
-            'expenseCategories' => ExpenseCategory::query()
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'expense_account_id']),
-
-            'suppliers' => Supplier::query()
+            'customers' => Customer::query()
                 ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $user->branch_id))
                 ->where('is_deleted', false)
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'code', 'account_id']),
 
-            'customers' => Customer::query()
+            'suppliers' => Supplier::query()
                 ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $user->branch_id))
                 ->where('is_deleted', false)
                 ->where('is_active', true)
@@ -447,12 +436,18 @@ class PaymentVoucherController extends Controller
                 ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $user->branch_id))
                 ->where('is_active', true)
                 ->orderBy('name')
-                ->get(['id', 'name', 'account_id', 'salary']),
+                ->get(['id', 'name', 'account_id']),
 
             'partners' => Partner::query()
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'current_account_id']),
+
+            'accounts' => Account::query()
+                ->where('is_active', true)
+                ->where('is_group', false)
+                ->orderBy('code')
+                ->get(['id', 'code', 'name', 'type', 'nature']),
         ];
     }
 
@@ -463,17 +458,17 @@ class PaymentVoucherController extends Controller
         }
     }
 
-    private function ensureVoucherAccess(PaymentVoucher $paymentVoucher): void
+    private function ensureVoucherAccess(ReceiptVoucher $receiptVoucher): void
     {
-        if (!$this->isAdmin() && (int) $paymentVoucher->branch_id !== (int) auth()->user()->branch_id) {
+        if (!$this->isAdmin() && (int) $receiptVoucher->branch_id !== (int) auth()->user()->branch_id) {
             abort(403, 'ليس لديك صلاحية للوصول لهذا الإيصال.');
         }
     }
 
     private function createJournalEntryForVoucher(
-        PaymentVoucher $voucher,
+        ReceiptVoucher $voucher,
         FinancialAccount $financialAccount,
-        int $debitAccountId,
+        int $creditAccountId,
         array $data,
         int $branchId,
         int $userId
@@ -482,14 +477,14 @@ class PaymentVoucherController extends Controller
             'entry_number' => $this->generateJournalEntryNumber(),
             'entry_date' => $data['voucher_date'],
             'branch_id' => $branchId,
-            'description' => 'قيد إيصال صرف رقم ' . $voucher->voucher_number,
-            'source_type' => PaymentVoucher::class,
+            'description' => 'قيد إيصال قبض رقم ' . $voucher->voucher_number,
+            'source_type' => ReceiptVoucher::class,
             'source_id' => $voucher->id,
             'created_by_user_id' => $userId,
             'status' => 'posted',
         ]);
 
-        $this->createJournalEntryLines($journalEntry, $financialAccount, $debitAccountId, $data);
+        $this->createJournalEntryLines($journalEntry, $financialAccount, $creditAccountId, $data);
 
         return $journalEntry;
     }
@@ -497,70 +492,56 @@ class PaymentVoucherController extends Controller
     private function createJournalEntryLines(
         JournalEntry $journalEntry,
         FinancialAccount $financialAccount,
-        int $debitAccountId,
+        int $creditAccountId,
         array $data
     ): void {
         JournalEntryLine::create([
             'journal_entry_id' => $journalEntry->id,
-            'account_id' => $debitAccountId,
+            'account_id' => $financialAccount->account_id,
             'debit' => $data['amount'],
             'credit' => 0,
-            'description' => $data['description'] ?? 'طرف مدين لإيصال صرف',
-            'customer_id' => $data['beneficiary_type'] === 'customer' ? ($data['beneficiary_id'] ?? null) : null,
-            'supplier_id' => $data['beneficiary_type'] === 'supplier' ? ($data['beneficiary_id'] ?? null) : null,
-            'employee_id' => in_array($data['beneficiary_type'], ['employee', 'salary'], true) ? ($data['beneficiary_id'] ?? null) : null,
-            'partner_id' => $data['beneficiary_type'] === 'partner' ? ($data['beneficiary_id'] ?? null) : null,
+            'description' => 'قبض في ' . $financialAccount->name,
         ]);
 
         JournalEntryLine::create([
             'journal_entry_id' => $journalEntry->id,
-            'account_id' => $financialAccount->account_id,
+            'account_id' => $creditAccountId,
             'debit' => 0,
             'credit' => $data['amount'],
-            'description' => 'صرف من ' . $financialAccount->name,
+            'description' => $data['description'] ?? 'طرف دائن لإيصال قبض',
+            'customer_id' => $data['received_from_type'] === 'customer' ? ($data['received_from_id'] ?? null) : null,
+            'supplier_id' => $data['received_from_type'] === 'supplier' ? ($data['received_from_id'] ?? null) : null,
+            'employee_id' => $data['received_from_type'] === 'employee' ? ($data['received_from_id'] ?? null) : null,
+            'partner_id' => $data['received_from_type'] === 'partner' ? ($data['received_from_id'] ?? null) : null,
         ]);
     }
 
-    private function resolveDebitAccountId(array $data, int $branchId): ?int
+    private function resolveCreditAccountId(array $data, int $branchId): ?int
     {
-        return match ($data['beneficiary_type']) {
-            'supplier' => $this->supplierAccountId((int) ($data['beneficiary_id'] ?? 0), $branchId),
-            'customer' => $this->customerAccountId((int) ($data['beneficiary_id'] ?? 0), $branchId),
-            'employee' => $this->employeeAccountId((int) ($data['beneficiary_id'] ?? 0), $branchId),
-            'salary' => $this->salaryExpenseAccountId($data),
-            'partner' => $this->partnerCurrentAccountId((int) ($data['beneficiary_id'] ?? 0)),
-            'expense' => $this->expenseCategoryAccountId((int) ($data['expense_category_id'] ?? 0)),
+        return match ($data['received_from_type']) {
+            'customer' => $this->customerAccountId((int) ($data['received_from_id'] ?? 0), $branchId),
+            'supplier' => $this->supplierAccountId((int) ($data['received_from_id'] ?? 0), $branchId),
+            'employee' => $this->employeeAccountId((int) ($data['received_from_id'] ?? 0), $branchId),
+            'partner' => $this->partnerCurrentAccountId((int) ($data['received_from_id'] ?? 0)),
+            'other' => !empty($data['account_id']) ? (int) $data['account_id'] : null,
             default => null,
         };
     }
 
-    private function beneficiaryName(PaymentVoucher $paymentVoucher): string
+    private function receivedFromName(ReceiptVoucher $receiptVoucher): string
     {
-        if (!$paymentVoucher->beneficiary_id && $paymentVoucher->beneficiary_type !== 'expense') {
+        if (!$receiptVoucher->received_from_id && $receiptVoucher->received_from_type !== 'other') {
             return '-';
         }
 
-        return match ($paymentVoucher->beneficiary_type) {
-            'supplier' => Supplier::query()->where('id', $paymentVoucher->beneficiary_id)->value('name') ?? '-',
-            'customer' => Customer::query()->where('id', $paymentVoucher->beneficiary_id)->value('name') ?? '-',
-            'employee', 'salary' => Employee::query()->where('id', $paymentVoucher->beneficiary_id)->value('name') ?? '-',
-            'partner' => Partner::query()->where('id', $paymentVoucher->beneficiary_id)->value('name') ?? '-',
-            'expense' => $paymentVoucher->expenseCategory?->name ?? 'مصروف عام',
+        return match ($receiptVoucher->received_from_type) {
+            'customer' => Customer::query()->where('id', $receiptVoucher->received_from_id)->value('name') ?? '-',
+            'supplier' => Supplier::query()->where('id', $receiptVoucher->received_from_id)->value('name') ?? '-',
+            'employee' => Employee::query()->where('id', $receiptVoucher->received_from_id)->value('name') ?? '-',
+            'partner' => Partner::query()->where('id', $receiptVoucher->received_from_id)->value('name') ?? '-',
+            'other' => $receiptVoucher->account?->name ?? 'قبض آخر',
             default => '-',
         };
-    }
-
-    private function supplierAccountId(int $supplierId, int $branchId): ?int
-    {
-        if ($supplierId <= 0) {
-            return null;
-        }
-
-        return Supplier::query()
-            ->where('id', $supplierId)
-            ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $branchId))
-            ->where('is_deleted', false)
-            ->value('account_id');
     }
 
     private function customerAccountId(int $customerId, int $branchId): ?int
@@ -571,6 +552,19 @@ class PaymentVoucherController extends Controller
 
         return Customer::query()
             ->where('id', $customerId)
+            ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $branchId))
+            ->where('is_deleted', false)
+            ->value('account_id');
+    }
+
+    private function supplierAccountId(int $supplierId, int $branchId): ?int
+    {
+        if ($supplierId <= 0) {
+            return null;
+        }
+
+        return Supplier::query()
+            ->where('id', $supplierId)
             ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $branchId))
             ->where('is_deleted', false)
             ->value('account_id');
@@ -599,32 +593,10 @@ class PaymentVoucherController extends Controller
             ->value('current_account_id');
     }
 
-    private function expenseCategoryAccountId(int $expenseCategoryId): ?int
-    {
-        if ($expenseCategoryId <= 0) {
-            return null;
-        }
-
-        return ExpenseCategory::query()
-            ->where('id', $expenseCategoryId)
-            ->value('expense_account_id');
-    }
-
-    private function salaryExpenseAccountId(array $data): ?int
-    {
-        if (!empty($data['expense_category_id'])) {
-            return $this->expenseCategoryAccountId((int) $data['expense_category_id']);
-        }
-
-        return Account::query()
-            ->where('code', '5100')
-            ->value('id');
-    }
-
     private function generateVoucherNumber(): string
     {
-        $prefix = 'PV-' . now()->format('Ymd') . '-';
-        $lastId = ((int) PaymentVoucher::query()->max('id')) + 1;
+        $prefix = 'RV-' . now()->format('Ymd') . '-';
+        $lastId = ((int) ReceiptVoucher::query()->max('id')) + 1;
 
         return $prefix . str_pad((string) $lastId, 5, '0', STR_PAD_LEFT);
     }
@@ -711,18 +683,14 @@ class PaymentVoucherController extends Controller
             $unit = $number % 10;
             $ten = $number - $unit;
 
-            return $unit
-                ? $ones[$unit] . ' و' . $tens[$ten]
-                : $tens[$ten];
+            return $unit ? $ones[$unit] . ' و' . $tens[$ten] : $tens[$ten];
         }
 
         if ($number < 1000) {
             $hundred = intdiv($number, 100) * 100;
             $rest = $number % 100;
 
-            return $rest
-                ? $hundreds[$hundred] . ' و' . $this->numberToArabicWords($rest)
-                : $hundreds[$hundred];
+            return $rest ? $hundreds[$hundred] . ' و' . $this->numberToArabicWords($rest) : $hundreds[$hundred];
         }
 
         if ($number < 1000000) {
@@ -736,9 +704,7 @@ class PaymentVoucherController extends Controller
                 default => $this->numberToArabicWords($thousands) . ' ألف',
             };
 
-            return $rest
-                ? $thousandText . ' و' . $this->numberToArabicWords($rest)
-                : $thousandText;
+            return $rest ? $thousandText . ' و' . $this->numberToArabicWords($rest) : $thousandText;
         }
 
         $millions = intdiv($number, 1000000);
@@ -751,8 +717,6 @@ class PaymentVoucherController extends Controller
             default => $this->numberToArabicWords($millions) . ' مليون',
         };
 
-        return $rest
-            ? $millionText . ' و' . $this->numberToArabicWords($rest)
-            : $millionText;
+        return $rest ? $millionText . ' و' . $this->numberToArabicWords($rest) : $millionText;
     }
 }

@@ -38,7 +38,64 @@ class ReceiptVoucher extends Model
         'amount' => 'decimal:2',
     ];
 
-    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
-    public function financialAccount(): BelongsTo { return $this->belongsTo(FinancialAccount::class); }
-    public function paymentMethod(): BelongsTo { return $this->belongsTo(PaymentMethod::class); }
+    /*
+    |--------------------------------------------------------------------------
+    | العلاقات الأساسية
+    |--------------------------------------------------------------------------
+    */
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function financialAccount(): BelongsTo
+    {
+        return $this->belongsTo(FinancialAccount::class);
+    }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | علاقات محاسبية مهمة
+    |--------------------------------------------------------------------------
+    */
+
+    public function account(): BelongsTo
+    {
+        // الحساب الدائن (الطرف المقبوض منه)
+        return $this->belongsTo(Account::class);
+    }
+
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Accessor مفيد للواجهة
+    |--------------------------------------------------------------------------
+    */
+
+    public function getReceivedFromLabelAttribute(): string
+    {
+        return match ($this->received_from_type) {
+            'customer' => 'عميل',
+            'supplier' => 'مورد',
+            'employee' => 'موظف',
+            'partner' => 'شريك',
+            'other' => 'أخرى',
+            default => '-',
+        };
+    }
 }

@@ -40,8 +40,51 @@ class PaymentVoucher extends Model
         'amount' => 'decimal:2',
     ];
 
-    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
-    public function financialAccount(): BelongsTo { return $this->belongsTo(FinancialAccount::class); }
-    public function paymentMethod(): BelongsTo { return $this->belongsTo(PaymentMethod::class); }
-    public function expenseCategory(): BelongsTo { return $this->belongsTo(ExpenseCategory::class); }
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function financialAccount(): BelongsTo
+    {
+        return $this->belongsTo(FinancialAccount::class);
+    }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
+    }
+
+    public function expenseCategory(): BelongsTo
+    {
+        return $this->belongsTo(ExpenseCategory::class);
+    }
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
+
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function getBeneficiaryLabelAttribute(): string
+    {
+        return match ($this->beneficiary_type) {
+            'supplier' => 'مورد',
+            'customer' => 'عميل',
+            'employee' => 'موظف',
+            'salary' => 'راتب',
+            'partner' => 'شريك',
+            'expense' => 'مصروف عام',
+            default => '-',
+        };
+    }
 }
