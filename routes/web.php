@@ -17,6 +17,8 @@ use App\Http\Controllers\PaymentVoucherController;
 use App\Http\Controllers\StockTransferController;
 use App\Http\Controllers\ReceiptVoucherController;
 use App\Http\Controllers\GeneralLedgerController;
+use App\Http\Controllers\FinancialAccountController;
+use App\Http\Controllers\FixedAssetController;
 
 
 Route::get('/', function () {
@@ -93,4 +95,19 @@ Route::resource('receipt-vouchers', ReceiptVoucherController::class)->only([
 ]);
 Route::get('/general-ledger', [GeneralLedgerController::class, 'index'])
     ->name('general-ledger.index');
+
+    Route::resource('financial-accounts', FinancialAccountController::class)->except(['destroy']);
+
+   
+
+Route::get('/fixed-assets-report', [FixedAssetController::class, 'report'])
+    ->name('fixed-assets.report');
+
+Route::post('/fixed-assets/{fixedAsset}/depreciations/monthly', [FixedAssetController::class, 'storeMonthlyDepreciation'])
+    ->name('fixed-assets.depreciations.monthly');
+
+Route::post('/fixed-assets/{fixedAsset}/depreciations', [FixedAssetController::class, 'storeDepreciation'])
+    ->name('fixed-assets.depreciations.store');
+
+Route::resource('fixed-assets', FixedAssetController::class)->except(['destroy']);
 });

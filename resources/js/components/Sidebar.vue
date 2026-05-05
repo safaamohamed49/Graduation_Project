@@ -64,7 +64,16 @@ const can = (permission) => {
         "
       >
         <p class="mb-2 px-2 text-xs font-bold text-slate-400">إدارة البيانات</p>
+         
 
+        <Link
+          v-if="can('financial_accounts.view')"
+          href="/financial-accounts"
+            class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
+           :class="currentUrl.startsWith('/financial-accounts') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
+          >
+         الخزائن والبنوك
+        </Link>
         <Link
           v-if="can('categories.view')"
           href="/categories"
@@ -207,6 +216,23 @@ const can = (permission) => {
 >
   دفتر الأستاذ
 </Link>
+<Link
+  v-if="can('fixed_assets.view')"
+  href="/fixed-assets"
+  class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
+  :class="currentUrl.startsWith('/fixed-assets') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
+>
+  الأصول الثابتة
+</Link>
+ <Link
+    href="/fixed-assets-report"
+    class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
+    :class="currentUrl.startsWith('/fixed-assets-report')
+      ? 'bg-white/10 text-white'
+      : 'text-slate-300 hover:bg-white/10 hover:text-white'"
+  >
+    تقرير الأصول
+  </Link>
         <Link
           v-if="can('reports.view')"
           href="/reports"

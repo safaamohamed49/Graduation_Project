@@ -17,6 +17,7 @@ class FixedAsset extends Model
         'salvage_value',
         'useful_life_years',
         'depreciation_method',
+        'financial_account_id',
         'asset_account_id',
         'depreciation_account_id',
         'depreciation_expense_account_id',
@@ -27,6 +28,7 @@ class FixedAsset extends Model
 
     protected $casts = [
         'branch_id' => 'integer',
+        'financial_account_id' => 'integer',
         'asset_account_id' => 'integer',
         'depreciation_account_id' => 'integer',
         'depreciation_expense_account_id' => 'integer',
@@ -38,6 +40,75 @@ class FixedAsset extends Model
         'is_active' => 'boolean',
     ];
 
-    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
-    public function depreciations(): HasMany { return $this->hasMany(FixedAssetDepreciation::class); }
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function financialAccount(): BelongsTo
+    {
+        return $this->belongsTo(FinancialAccount::class);
+    }
+
+    public function assetAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'asset_account_id');
+    }
+
+    public function depreciationAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'depreciation_account_id');
+    }
+
+    public function depreciationExpenseAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'depreciation_expense_account_id');
+    }
+
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function depreciations(): HasMany
+    {
+        return $this->hasMany(FixedAssetDepreciation::class);
+    }
+
+    public function getDepreciableValueAttribute(): float
+    {
+        return max(0, (float) $this->purchase_value - (float) $this->salvage_value);
+    }
+
+    public function getTotalDepreciationAttribute(): float
+    {
+        if ($this->relationLoaded('depreciations')) {
+            return (float) $this->depreciations->sum('amount');
+        }
+
+        return (float) $this->depreciations()->sum('amount');
+    }
+
+    public function getBookValueAttribute(): float
+    {
+        return max(0, (float) $this->purchase_value - (float) $this->total_depreciation);
+    }
+
+    public function getMonthlyDepreciationAttribute(): float
+    {
+        if ((int) $this->useful_life_years <= 0) {
+            return 0;
+        }
+
+        return round($this->depreciable_value / ((int) $this->useful_life_years * 12), 2);
+    }
+
+    public function getYearlyDepreciationAttribute(): float
+    {
+        if ((int) $this->useful_life_years <= 0) {
+            return 0;
+        }
+
+        return round($this->depreciable_value / (int) $this->useful_life_years, 2);
+    }
 }
