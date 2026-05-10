@@ -76,7 +76,15 @@ class RoleSeeder extends Seeder
                    'fixed_assets.update',
                    'fixed_assets.depreciate',
                    'fixed_assets.report',
-                ],
+
+                   'reports.view',
+                   'reports.financial',
+                   'reports.sales',
+                    'reports.purchases ',
+                    'reports.customers', 
+                    'reports.suppliers',
+                   'reports.assets',
+                 ],
                 'is_active' => true,
                 'notes' => 'صلاحيات تشغيل وإدارة فرع بدون حذف حساس.',
             ]

@@ -20,6 +20,42 @@ const invoiceToDelete = ref(null)
 
 const invoicesData = computed(() => props.invoices?.data ?? [])
 
+const totalPageAmount = computed(() => {
+  return invoicesData.value.reduce((sum, invoice) => {
+    return sum + Number(invoice.total_price || 0)
+  }, 0)
+})
+
+const totalPagePaid = computed(() => {
+  return invoicesData.value.reduce((sum, invoice) => {
+    return sum + Number(invoice.paid_amount || 0)
+  }, 0)
+})
+
+const totalPageRemaining = computed(() => {
+  return invoicesData.value.reduce((sum, invoice) => {
+    return sum + Math.max(0, Number(invoice.total_price || 0) - Number(invoice.paid_amount || 0))
+  }, 0)
+})
+
+const paymentStatusLabel = (status) => {
+  const labels = {
+    paid: 'مصروفة بالكامل',
+    due: 'غير مصروفة',
+    partial: 'مصروفة جزئيًا',
+  }
+
+  return labels[status] || status || '-'
+}
+
+const paymentStatusClass = (status) => {
+  return {
+    'bg-emerald-100 text-emerald-700': status === 'paid',
+    'bg-rose-100 text-rose-700': status === 'due',
+    'bg-amber-100 text-amber-700': status === 'partial',
+  }
+}
+
 const submitSearch = () => {
   router.get(
     '/purchase-invoices',
@@ -58,41 +94,47 @@ const confirmDeleteInvoice = () => {
       <PageHero
         badge="المشتريات"
         title="فواتير الشراء"
-        description="عرض ومراجعة فواتير الشراء المسجلة، مع إمكانية البحث والتعديل والحذف المنطقي قبل استخدام كمياتها في فواتير البيع."
+        description="عرض ومراجعة فواتير الشراء، مع إدخال المخزون وفصل الصرف المالي عبر إيصالات صرف مرتبطة بالفواتير."
         gradient-class="bg-gradient-to-br from-emerald-800 via-teal-800 to-slate-950"
       />
 
-      <section class="grid gap-4 md:grid-cols-3">
+      <section class="grid gap-4 md:grid-cols-4">
         <div class="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div class="text-sm font-bold text-slate-500">عدد الفواتير</div>
-          <div class="mt-3 text-3xl font-black text-slate-800">{{ props.invoices?.total ?? 0 }}</div>
+          <div class="mt-3 text-3xl font-black text-slate-800">
+            {{ props.invoices?.total ?? 0 }}
+          </div>
           <div class="mt-2 text-xs text-slate-400">إجمالي فواتير الشراء المسجلة</div>
         </div>
 
         <div class="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div class="text-sm font-bold text-slate-500">إجمالي الصفحة</div>
           <div class="mt-3 text-3xl font-black text-emerald-600">
-            {{
-              invoicesData
-                .reduce((sum, invoice) => sum + Number(invoice.total_price || 0), 0)
-                .toFixed(2)
-            }}
+            {{ totalPageAmount.toFixed(2) }}
           </div>
           <div class="mt-2 text-xs text-slate-400">مجموع الفواتير الظاهرة حاليًا</div>
         </div>
 
         <div class="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <div class="text-sm font-bold text-slate-500">آخر فاتورة</div>
-          <div class="mt-3 text-xl font-black text-cyan-700">
-            {{ invoicesData[0]?.invoice_number ?? '-' }}
+          <div class="text-sm font-bold text-slate-500">مصروف من الصفحة</div>
+          <div class="mt-3 text-3xl font-black text-indigo-600">
+            {{ totalPagePaid.toFixed(2) }}
           </div>
-          <div class="mt-2 text-xs text-slate-400">آخر فاتورة شراء حسب الإدخال</div>
+          <div class="mt-2 text-xs text-slate-400">مجموع إيصالات الصرف المرتبطة</div>
+        </div>
+
+        <div class="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <div class="text-sm font-bold text-slate-500">المتبقي للموردين</div>
+          <div class="mt-3 text-3xl font-black text-rose-600">
+            {{ totalPageRemaining.toFixed(2) }}
+          </div>
+          <div class="mt-2 text-xs text-slate-400">المتبقي على الفواتير الظاهرة</div>
         </div>
       </section>
 
       <EntityToolbar
         v-model="search"
-        placeholder="ابحثي برقم الفاتورة أو اسم المورد"
+        placeholder="ابحثي برقم الفاتورة أو اسم المورد أو حالة الصرف"
         create-href="/purchase-invoices/create"
         create-label="إضافة فاتورة شراء"
         @search="submitSearch"
@@ -112,6 +154,9 @@ const confirmDeleteInvoice = () => {
                 <th class="px-4 py-4 font-black">الفرع</th>
                 <th class="px-4 py-4 font-black">المخزن</th>
                 <th class="px-4 py-4 font-black">الإجمالي</th>
+                <th class="px-4 py-4 font-black">المصروف</th>
+                <th class="px-4 py-4 font-black">المتبقي</th>
+                <th class="px-4 py-4 font-black">حالة الصرف</th>
                 <th class="px-4 py-4 font-black">الإجراءات</th>
               </tr>
             </thead>
@@ -127,9 +172,11 @@ const confirmDeleteInvoice = () => {
                 </td>
 
                 <td class="px-4 py-4">
-                  <span class="rounded-xl bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
-                    {{ invoice.invoice_number }}
-                  </span>
+                  <Link :href="`/purchase-invoices/${invoice.id}`">
+                    <span class="rounded-xl bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 transition hover:bg-emerald-100 hover:text-emerald-700">
+                      {{ invoice.invoice_number }}
+                    </span>
+                  </Link>
                 </td>
 
                 <td class="px-4 py-4">
@@ -140,15 +187,41 @@ const confirmDeleteInvoice = () => {
                   {{ invoice.supplier?.name ?? '-' }}
                 </td>
 
-                <td class="px-4 py-4">{{ invoice.branch?.name ?? '-' }}</td>
-                <td class="px-4 py-4">{{ invoice.warehouse?.name ?? '-' }}</td>
+                <td class="px-4 py-4">
+                  {{ invoice.branch?.name ?? '-' }}
+                </td>
+
+                <td class="px-4 py-4">
+                  {{ invoice.warehouse?.name ?? '-' }}
+                </td>
 
                 <td class="px-4 py-4 font-black text-emerald-700">
                   {{ Number(invoice.total_price || 0).toFixed(2) }}
                 </td>
 
+                <td class="px-4 py-4 font-black text-indigo-700">
+                  {{ Number(invoice.paid_amount || 0).toFixed(2) }}
+                </td>
+
+                <td class="px-4 py-4 font-black text-rose-700">
+                  {{ Math.max(0, Number(invoice.total_price || 0) - Number(invoice.paid_amount || 0)).toFixed(2) }}
+                </td>
+
+                <td class="px-4 py-4">
+                  <span
+                    class="rounded-xl px-3 py-1 text-xs font-black"
+                    :class="paymentStatusClass(invoice.payment_status)"
+                  >
+                    {{ paymentStatusLabel(invoice.payment_status) }}
+                  </span>
+                </td>
+
                 <td class="px-4 py-4">
                   <div class="flex flex-wrap gap-2">
+                    <Link :href="`/purchase-invoices/${invoice.id}`">
+                      <BaseButton label="عرض" color="info" small />
+                    </Link>
+
                     <Link :href="`/purchase-invoices/${invoice.id}/edit`">
                       <BaseButton label="تعديل" color="warning" small />
                     </Link>
@@ -164,7 +237,7 @@ const confirmDeleteInvoice = () => {
               </tr>
 
               <tr v-if="!invoicesData.length">
-                <td colspan="8" class="px-4 py-14 text-center text-sm text-slate-500">
+                <td colspan="11" class="px-4 py-14 text-center text-sm text-slate-500">
                   لا توجد فواتير شراء مطابقة.
                 </td>
               </tr>
@@ -195,7 +268,7 @@ const confirmDeleteInvoice = () => {
       :open="deleteModalOpen"
       title="تأكيد حذف فاتورة الشراء"
       :item-name="invoiceToDelete?.invoice_number || ''"
-      message="سيتم حذف الفاتورة منطقيًا وحذف دفعات المخزون الخاصة بها إذا لم تكن مستخدمة في البيع"
+      message="سيتم حذف الفاتورة منطقيًا إذا لم تُستخدم كمياتها في البيع، وسيتم إلغاء إيصالات الصرف التلقائية المرتبطة بها بقيود عكسية."
       confirm-label="تأكيد الحذف"
       @close="closeDeleteModal"
       @confirm="confirmDeleteInvoice"

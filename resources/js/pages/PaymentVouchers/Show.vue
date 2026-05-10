@@ -9,10 +9,23 @@ import PageHero from '@/Components/App/PageHero.vue'
 const props = defineProps({
   paymentVoucher: Object,
   reverseEntry: Object,
-  permissions: Object,
+  linkedPurchaseInvoice: Object,
   beneficiaryName: String,
   amountInWords: String,
+  permissions: Object,
 })
+
+const printPage = () => {
+  window.print()
+}
+
+const cancelVoucher = () => {
+  if (!confirm('هل أنت متأكد من إلغاء هذا الإيصال؟ سيتم إنشاء قيد عكسي وتحديث الفاتورة المرتبطة.')) {
+    return
+  }
+
+  router.post(`/payment-vouchers/${props.paymentVoucher.id}/cancel`)
+}
 
 const beneficiaryTypeLabel = (type) => {
   const labels = {
@@ -24,75 +37,111 @@ const beneficiaryTypeLabel = (type) => {
     expense: 'مصروف عام',
   }
 
-  return labels[type] || '-'
+  return labels[type] || type || '-'
 }
 
-const statusLabel = (status) => {
+const voucherStatusLabel = (status) => {
   const labels = {
     posted: 'مرحل',
-    draft: 'مسودة',
     cancelled: 'ملغي',
+    draft: 'مسودة',
   }
 
-  return labels[status] || '-'
+  return labels[status] || status || '-'
 }
 
-const printVoucher = () => {
-  window.print()
-}
-
-const cancelVoucher = () => {
-  if (!confirm('هل أنتِ متأكدة من إلغاء هذا الإيصال؟ سيتم إنشاء قيد عكسي تلقائياً.')) {
-    return
+const voucherStatusClass = (status) => {
+  return {
+    'bg-emerald-100 text-emerald-700': status === 'posted',
+    'bg-rose-100 text-rose-700': status === 'cancelled',
+    'bg-amber-100 text-amber-700': status === 'draft',
   }
-
-  router.post(`/payment-vouchers/${props.paymentVoucher.id}/cancel`, {}, {
-    preserveScroll: true,
-  })
 }
 </script>
 
 <template>
-  <MainLayout :title="props.paymentVoucher.voucher_number">
+  <MainLayout :title="paymentVoucher.voucher_number">
     <div class="space-y-6">
       <div class="no-print">
         <PageHero
-          badge="تفاصيل إيصال الصرف"
-          :title="props.paymentVoucher.voucher_number"
-          description="عرض تفاصيل إيصال الصرف والقيد المحاسبي المرتبط به."
+          badge="إيصال صرف"
+          :title="`إيصال صرف رقم ${paymentVoucher.voucher_number}`"
+          description="عرض رسمي لإيصال الصرف، القيد المحاسبي، وأي ارتباط بفواتير شراء أو قيود عكسية."
           gradient-class="bg-gradient-to-br from-rose-900 via-slate-900 to-orange-800"
         />
       </div>
 
-      <div class="no-print flex flex-wrap justify-end gap-3">
+      <section class="no-print flex flex-wrap justify-end gap-3">
         <Link href="/payment-vouchers">
           <BaseButton label="رجوع" color="light" />
         </Link>
 
-        <BaseButton label="طباعة الإيصال" color="info" @click="printVoucher" />
+        <BaseButton label="طباعة الإيصال" color="info" @click="printPage" />
 
         <Link
-          v-if="props.permissions?.canUpdate"
-          :href="`/payment-vouchers/${props.paymentVoucher.id}/edit`"
+          v-if="permissions?.canUpdate"
+          :href="`/payment-vouchers/${paymentVoucher.id}/edit`"
         >
-          <BaseButton label="تعديل الإيصال" color="warning" />
+          <BaseButton label="تعديل" color="warning" />
         </Link>
 
         <BaseButton
-          v-if="props.permissions?.canCancel"
+          v-if="permissions?.canCancel"
           label="إلغاء الإيصال"
           color="danger"
           @click="cancelVoucher"
         />
-      </div>
+      </section>
 
-      <div id="print-area" class="space-y-6">
+      <section class="grid gap-4 md:grid-cols-4 no-print">
+        <div class="rounded-[24px] bg-white p-5 ring-1 ring-slate-200">
+          <div class="text-sm font-bold text-slate-500">المبلغ</div>
+          <div class="mt-2 text-2xl font-black text-slate-800">
+            {{ Number(paymentVoucher.amount || 0).toFixed(2) }}
+          </div>
+        </div>
+
+        <div class="rounded-[24px] bg-white p-5 ring-1 ring-slate-200">
+          <div class="text-sm font-bold text-slate-500">المستفيد</div>
+          <div class="mt-2 text-xl font-black text-slate-800">
+            {{ beneficiaryName }}
+          </div>
+        </div>
+
+        <div class="rounded-[24px] bg-white p-5 ring-1 ring-slate-200">
+          <div class="text-sm font-bold text-slate-500">الحالة</div>
+          <div class="mt-2">
+            <span
+              class="rounded-xl px-4 py-2 text-sm font-black"
+              :class="voucherStatusClass(paymentVoucher.status)"
+            >
+              {{ voucherStatusLabel(paymentVoucher.status) }}
+            </span>
+          </div>
+        </div>
+
+        <div class="rounded-[24px] bg-white p-5 ring-1 ring-slate-200">
+          <div class="text-sm font-bold text-slate-500">الحساب المالي</div>
+          <div class="mt-2 text-lg font-black text-slate-800">
+            {{ paymentVoucher.financial_account?.name || '-' }}
+          </div>
+        </div>
+      </section>
+
+      <div id="print-area">
         <section class="official-voucher bg-white text-slate-950 shadow-sm ring-1 ring-slate-300">
           <div class="voucher-top">
             <div class="company-block">
               <div class="company-name">بنيس للحديد الصناعي</div>
+
               <div class="company-subtitle">
-                الفرع المصدر للإيصال: {{ props.paymentVoucher.branch?.name || '-' }}
+                الفرع:
+                {{ paymentVoucher.branch?.name || '-' }}
+              </div>
+
+              <div class="company-subtitle">
+                نوع المستفيد:
+                {{ beneficiaryTypeLabel(paymentVoucher.beneficiary_type) }}
               </div>
             </div>
 
@@ -103,182 +152,196 @@ const cancelVoucher = () => {
 
             <div class="voucher-number-block">
               <div class="small-label">رقم الإيصال</div>
-              <div class="voucher-number">{{ props.paymentVoucher.voucher_number }}</div>
-              <div
-                v-if="props.paymentVoucher.status === 'cancelled'"
-                class="cancel-stamp"
-              >
-                ملغي
-              </div>
+              <div class="voucher-number">{{ paymentVoucher.voucher_number }}</div>
             </div>
           </div>
 
-          <div class="voucher-row three">
+          <div class="voucher-row four">
             <div class="voucher-cell">
               <span>التاريخ</span>
               <strong>
-                {{ props.paymentVoucher.voucher_date ? new Date(props.paymentVoucher.voucher_date).toLocaleDateString('en-GB') : '-' }}
+                {{
+                  paymentVoucher.voucher_date
+                    ? String(paymentVoucher.voucher_date).slice(0, 10)
+                    : '-'
+                }}
               </strong>
             </div>
 
             <div class="voucher-cell">
-              <span>طريقة الدفع</span>
-              <strong>{{ props.paymentVoucher.payment_method?.name || '-' }}</strong>
+              <span>المستفيد</span>
+              <strong>{{ beneficiaryName || '-' }}</strong>
             </div>
 
             <div class="voucher-cell">
-              <span>الخزينة / البنك</span>
-              <strong>{{ props.paymentVoucher.financial_account?.name || '-' }}</strong>
+              <span>طريقة الصرف</span>
+              <strong>{{ paymentVoucher.payment_method?.name || '-' }}</strong>
+            </div>
+
+            <div class="voucher-cell">
+              <span>الحالة</span>
+              <strong>{{ voucherStatusLabel(paymentVoucher.status) }}</strong>
             </div>
           </div>
 
           <div class="voucher-row two">
             <div class="voucher-cell">
-              <span>صرفنا إلى السيد / الجهة</span>
-              <strong>{{ props.beneficiaryName || '-' }}</strong>
+              <span>الحساب المالي</span>
+              <strong>{{ paymentVoucher.financial_account?.name || '-' }}</strong>
             </div>
 
             <div class="voucher-cell">
-              <span>نوع الصرف</span>
-              <strong>{{ beneficiaryTypeLabel(props.paymentVoucher.beneficiary_type) }}</strong>
+              <span>المبلغ</span>
+              <strong>{{ Number(paymentVoucher.amount || 0).toFixed(2) }} د.ل</strong>
             </div>
           </div>
 
-          <div class="amount-line">
-            <div class="amount-box">
-              <span>المبلغ رقماً</span>
-              <strong>{{ Number(props.paymentVoucher.amount || 0).toFixed(2) }} د.ل</strong>
-            </div>
+          <div
+            v-if="linkedPurchaseInvoice"
+            class="linked-box"
+          >
+            <div class="linked-title">فاتورة شراء مرتبطة</div>
 
-            <div class="words-box">
-              <span>المبلغ كتابةً</span>
-              <strong>{{ props.amountInWords || '-' }}</strong>
+            <div class="voucher-row four">
+              <div class="voucher-cell">
+                <span>رقم الفاتورة</span>
+                <strong>{{ linkedPurchaseInvoice.invoice_number }}</strong>
+              </div>
+
+              <div class="voucher-cell">
+                <span>المورد</span>
+                <strong>{{ linkedPurchaseInvoice.supplier?.name || '-' }}</strong>
+              </div>
+
+              <div class="voucher-cell">
+                <span>إجمالي الفاتورة</span>
+                <strong>{{ Number(linkedPurchaseInvoice.total_price || 0).toFixed(2) }}</strong>
+              </div>
+
+              <div class="voucher-cell">
+                <span>المدفوع بعد هذا الإيصال</span>
+                <strong>{{ Number(linkedPurchaseInvoice.paid_amount || 0).toFixed(2) }}</strong>
+              </div>
             </div>
           </div>
 
-          <div class="voucher-cell description-cell">
-            <span>البيان</span>
-            <strong class="whitespace-pre-line">{{ props.paymentVoucher.description || '-' }}</strong>
+          <div class="voucher-row one">
+            <div class="voucher-cell description-cell">
+              <span>البيان</span>
+              <strong class="whitespace-pre-line">
+                {{ paymentVoucher.description || '-' }}
+              </strong>
+            </div>
           </div>
 
-          <div class="accounting-strip">
-            <div>
-              <span>الحساب المدين</span>
-              <strong>{{ props.paymentVoucher.account?.name || '-' }}</strong>
-            </div>
-
-            <div>
-              <span>الحساب الدائن</span>
-              <strong>{{ props.paymentVoucher.financial_account?.name || '-' }}</strong>
-            </div>
-
-            <div>
-              <span>أعد الإيصال</span>
-              <strong>{{ props.paymentVoucher.created_by?.name || '-' }}</strong>
-            </div>
+          <div class="words-box">
+            <span>المبلغ كتابةً</span>
+            <strong>{{ amountInWords || '-' }}</strong>
           </div>
 
           <div class="signature-strip">
-            <div>توقيع المستلم</div>
-            <div>توقيع المحاسب</div>
+            <div>توقيع المستفيد</div>
+            <div>توقيع أمين الخزينة</div>
             <div>اعتماد الإدارة</div>
           </div>
 
           <div class="footer-note">
-            هذا الإيصال صادر من فرع: {{ props.paymentVoucher.branch?.name || '-' }} — فقط لا يعتمد إلا بتوقيع المخولين.
+            صادر من نظام بنيس للحديد الصناعي
           </div>
         </section>
-
-        <CardBox class="no-print">
-          <CardBoxComponentHeader title="القيد المحاسبي" />
-
-          <div class="overflow-x-auto">
-            <table class="min-w-full text-right">
-              <thead class="bg-slate-50">
-                <tr class="text-sm text-slate-600">
-                  <th class="px-4 py-4 font-black">الحساب</th>
-                  <th class="px-4 py-4 font-black">البيان</th>
-                  <th class="px-4 py-4 font-black">مدين</th>
-                  <th class="px-4 py-4 font-black">دائن</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr
-                  v-for="line in props.paymentVoucher.journal_entry?.lines || []"
-                  :key="line.id"
-                  class="border-t text-sm text-slate-700"
-                >
-                  <td class="px-4 py-4">
-                    <div class="flex flex-col">
-                      <span class="font-black">{{ line.account?.name || '-' }}</span>
-                      <span class="text-xs text-slate-400">{{ line.account?.code || '-' }}</span>
-                    </div>
-                  </td>
-
-                  <td class="px-4 py-4">{{ line.description || '-' }}</td>
-
-                  <td class="px-4 py-4 font-black text-emerald-700">
-                    {{ Number(line.debit || 0).toFixed(2) }}
-                  </td>
-
-                  <td class="px-4 py-4 font-black text-rose-700">
-                    {{ Number(line.credit || 0).toFixed(2) }}
-                  </td>
-                </tr>
-
-                <tr v-if="!props.paymentVoucher.journal_entry?.lines?.length">
-                  <td colspan="4" class="px-4 py-12 text-center text-sm text-slate-500">
-                    لا يوجد قيد محاسبي مرتبط بهذا الإيصال.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </CardBox>
-
-        <CardBox v-if="props.reverseEntry" class="no-print">
-          <CardBoxComponentHeader title="القيد العكسي للإلغاء" />
-
-          <div class="overflow-x-auto">
-            <table class="min-w-full text-right">
-              <thead class="bg-slate-50">
-                <tr class="text-sm text-slate-600">
-                  <th class="px-4 py-4 font-black">الحساب</th>
-                  <th class="px-4 py-4 font-black">البيان</th>
-                  <th class="px-4 py-4 font-black">مدين</th>
-                  <th class="px-4 py-4 font-black">دائن</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr
-                  v-for="line in props.reverseEntry.lines || []"
-                  :key="line.id"
-                  class="border-t text-sm text-slate-700"
-                >
-                  <td class="px-4 py-4">
-                    <div class="flex flex-col">
-                      <span class="font-black">{{ line.account?.name || '-' }}</span>
-                      <span class="text-xs text-slate-400">{{ line.account?.code || '-' }}</span>
-                    </div>
-                  </td>
-
-                  <td class="px-4 py-4">{{ line.description || '-' }}</td>
-
-                  <td class="px-4 py-4 font-black text-emerald-700">
-                    {{ Number(line.debit || 0).toFixed(2) }}
-                  </td>
-
-                  <td class="px-4 py-4 font-black text-rose-700">
-                    {{ Number(line.credit || 0).toFixed(2) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </CardBox>
       </div>
+
+      <CardBox class="no-print">
+        <CardBoxComponentHeader title="القيد المحاسبي" />
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-right">
+            <thead class="bg-slate-50">
+              <tr class="text-sm text-slate-600">
+                <th class="px-4 py-4 font-black">الحساب</th>
+                <th class="px-4 py-4 font-black">البيان</th>
+                <th class="px-4 py-4 font-black">مدين</th>
+                <th class="px-4 py-4 font-black">دائن</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr
+                v-for="line in paymentVoucher.journal_entry?.lines || []"
+                :key="line.id"
+                class="border-t text-sm text-slate-700"
+              >
+                <td class="px-4 py-4">
+                  <div class="flex flex-col">
+                    <span class="font-black">{{ line.account?.name || '-' }}</span>
+                    <span class="text-xs text-slate-400">{{ line.account?.code || '-' }}</span>
+                  </div>
+                </td>
+
+                <td class="px-4 py-4">{{ line.description || '-' }}</td>
+
+                <td class="px-4 py-4 font-black text-emerald-700">
+                  {{ Number(line.debit || 0).toFixed(2) }}
+                </td>
+
+                <td class="px-4 py-4 font-black text-rose-700">
+                  {{ Number(line.credit || 0).toFixed(2) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </CardBox>
+
+      <CardBox
+        v-if="reverseEntry"
+        class="no-print"
+      >
+        <CardBoxComponentHeader title="القيد العكسي للإلغاء" />
+
+        <div class="rounded-[24px] bg-rose-50 p-5 ring-1 ring-rose-200">
+          <div class="mb-4 text-sm font-bold text-rose-700">
+            تم إلغاء هذا الإيصال، وتم إنشاء قيد عكسي.
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-right">
+              <thead class="bg-white">
+                <tr class="text-sm text-slate-600">
+                  <th class="px-4 py-4 font-black">الحساب</th>
+                  <th class="px-4 py-4 font-black">البيان</th>
+                  <th class="px-4 py-4 font-black">مدين</th>
+                  <th class="px-4 py-4 font-black">دائن</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr
+                  v-for="line in reverseEntry.lines || []"
+                  :key="line.id"
+                  class="border-t text-sm text-slate-700"
+                >
+                  <td class="px-4 py-4">
+                    {{ line.account?.name || '-' }}
+                  </td>
+
+                  <td class="px-4 py-4">
+                    {{ line.description || '-' }}
+                  </td>
+
+                  <td class="px-4 py-4 font-black text-emerald-700">
+                    {{ Number(line.debit || 0).toFixed(2) }}
+                  </td>
+
+                  <td class="px-4 py-4 font-black text-rose-700">
+                    {{ Number(line.credit || 0).toFixed(2) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </CardBox>
     </div>
   </MainLayout>
 </template>
@@ -287,7 +350,7 @@ const cancelVoucher = () => {
 .official-voucher {
   direction: rtl;
   width: 100%;
-  max-width: 900px;
+  max-width: 960px;
   margin: 0 auto;
   border: 2px solid #0f172a;
   padding: 18px;
@@ -298,7 +361,6 @@ const cancelVoucher = () => {
 .voucher-top {
   display: grid;
   grid-template-columns: 1fr 1.1fr 1fr;
-  align-items: start;
   gap: 12px;
   border-bottom: 2px solid #0f172a;
   padding-bottom: 12px;
@@ -308,7 +370,6 @@ const cancelVoucher = () => {
 .company-name {
   font-size: 22px;
   font-weight: 900;
-  color: #0f172a;
 }
 
 .company-subtitle {
@@ -335,19 +396,11 @@ const cancelVoucher = () => {
   font-size: 11px;
   font-weight: 800;
   color: #64748b;
-  letter-spacing: 1px;
-}
-
-.voucher-number-block {
-  text-align: left;
-  position: relative;
 }
 
 .small-label,
 .voucher-cell span,
-.amount-box span,
-.words-box span,
-.accounting-strip span {
+.words-box span {
   display: block;
   font-size: 11px;
   font-weight: 900;
@@ -358,18 +411,6 @@ const cancelVoucher = () => {
 .voucher-number {
   font-size: 18px;
   font-weight: 900;
-  color: #0f172a;
-}
-
-.cancel-stamp {
-  display: inline-block;
-  margin-top: 6px;
-  border: 2px solid #e11d48;
-  color: #e11d48;
-  padding: 2px 14px;
-  font-size: 17px;
-  font-weight: 900;
-  transform: rotate(-6deg);
 }
 
 .voucher-row {
@@ -378,68 +419,53 @@ const cancelVoucher = () => {
   margin-top: 8px;
 }
 
-.voucher-row.three {
-  grid-template-columns: repeat(3, 1fr);
+.voucher-row.four {
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .voucher-row.two {
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.voucher-row.one {
+  grid-template-columns: 1fr;
 }
 
 .voucher-cell,
-.amount-box,
 .words-box {
   border: 1px solid #334155;
-  padding: 9px 10px;
-  min-height: 56px;
+  padding: 10px;
 }
 
 .voucher-cell strong,
-.amount-box strong,
-.words-box strong,
-.accounting-strip strong {
+.words-box strong {
   display: block;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 900;
-  color: #0f172a;
-  line-height: 1.5;
 }
 
-.amount-line {
-  display: grid;
-  grid-template-columns: 1fr 2.2fr;
-  gap: 8px;
-  margin-top: 8px;
+.linked-box {
+  margin-top: 10px;
+  border: 2px solid #fecaca;
+  background: #fff1f2;
+  padding: 12px;
 }
 
-.amount-box {
-  border: 2px solid #0f172a;
-}
-
-.amount-box strong {
-  font-size: 21px;
-}
-
-.words-box {
-  background: #f8fafc;
-  border: 2px solid #0f172a;
+.linked-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 900;
+  color: #9f1239;
 }
 
 .description-cell {
-  margin-top: 8px;
-  min-height: 68px;
+  min-height: 70px;
 }
 
-.accounting-strip {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.accounting-strip > div {
-  border: 1px solid #cbd5e1;
-  padding: 8px 10px;
+.words-box {
+  margin-top: 10px;
+  background: #f8fafc;
+  border: 2px solid #0f172a;
 }
 
 .signature-strip {
@@ -468,58 +494,23 @@ const cancelVoucher = () => {
 }
 
 @media print {
-  body {
-    background: white !important;
-  }
-
   aside,
   header,
   .no-print {
     display: none !important;
   }
 
-  #print-area {
-    display: block !important;
-    direction: rtl;
-    padding: 0 !important;
-  }
-
   .official-voucher {
-    max-width: 100% !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    margin: 0 !important;
-    padding: 12px !important;
-    border: 2px solid #000 !important;
-  }
-
-  .company-name {
-    font-size: 20px !important;
-  }
-
-  .voucher-title {
-    font-size: 22px !important;
-    padding: 6px 24px !important;
-  }
-
-  .voucher-cell,
-  .amount-box,
-  .words-box {
-    padding: 7px 8px !important;
-    min-height: 48px !important;
-  }
-
-  .description-cell {
-    min-height: 58px !important;
-  }
-
-  .signature-strip {
-    margin-top: 34px !important;
+    max-width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    padding: 10px;
   }
 
   @page {
     size: A4 portrait;
-    margin: 12mm;
+    margin: 10mm;
   }
 }
 </style>

@@ -19,6 +19,8 @@ class PurchaseInvoice extends Model
         'total_expenses',
         'total_price',
         'total_base_price',
+        'paid_amount',
+        'payment_status',
         'journal_entry_id',
         'user_id',
         'updated_by_user_id',
@@ -39,11 +41,38 @@ class PurchaseInvoice extends Model
         'total_expenses' => 'decimal:2',
         'total_price' => 'decimal:2',
         'total_base_price' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
         'is_deleted' => 'boolean',
     ];
 
-    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
-    public function warehouse(): BelongsTo { return $this->belongsTo(Warehouse::class); }
-    public function supplier(): BelongsTo { return $this->belongsTo(Supplier::class); }
-    public function items(): HasMany { return $this->hasMany(PurchaseInvoiceItem::class, 'invoice_id'); }
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(PurchaseInvoiceItem::class, 'invoice_id');
+    }
+
+    public function paymentVouchers(): HasMany
+    {
+        return $this->hasMany(PaymentVoucher::class, 'reference_id')
+            ->where('reference_type', 'purchase_invoice');
+    }
 }

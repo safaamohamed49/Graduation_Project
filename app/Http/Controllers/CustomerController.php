@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
-use Illuminate\Http\Request;
+use App\Services\Accounting\AccountCreationService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,20 +19,38 @@ class CustomerController extends Controller
         }
     }
 
+    private function isAdmin(): bool
+    {
+        return auth()->user()?->hasPermission('*') ?? false;
+    }
+
     public function index(Request $request): Response
     {
         $this->authorizePermission('customers.view', 'ليس لديك صلاحية لعرض العملاء.');
 
         $search = trim((string) $request->get('search', ''));
 
-        $query = Customer::query()->where('is_deleted', false);
+        $query = Customer::query()
+            ->with(['branch:id,name,code', 'account:id,name,code'])
+            ->where('is_deleted', false);
+
+        if (!$this->isAdmin()) {
+            $query->where(function ($q) {
+                $q->whereNull('branch_id')
+                    ->orWhere('branch_id', auth()->user()?->branch_id);
+            });
+        }
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%")
                     ->orWhere('phone', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhereHas('account', function ($accountQuery) use ($search) {
+                        $accountQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -59,7 +79,7 @@ class CustomerController extends Controller
         return Inertia::render('Customers/Create');
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, AccountCreationService $accountCreationService): RedirectResponse
     {
         $this->authorizePermission('customers.create', 'ليس لديك صلاحية لإضافة عميل.');
 
@@ -104,21 +124,29 @@ class CustomerController extends Controller
             ])->withInput();
         }
 
-        Customer::create([
-            'branch_id' => auth()->user()?->branch_id,
-            'name' => $name,
-            'code' => $code,
-            'phone' => $data['phone'] ?? null,
-            'email' => $data['email'] ?? null,
-            'address' => $data['address'] ?? null,
-            'notes' => $data['notes'] ?? null,
-            'account_id' => null,
-            'is_active' => $request->boolean('is_active', true),
-            'is_deleted' => false,
-            'is_locked' => false,
-        ]);
+        DB::transaction(function () use ($request, $data, $name, $code, $accountCreationService) {
+            $customer = Customer::create([
+                'branch_id' => auth()->user()?->branch_id,
+                'name' => $name,
+                'code' => $code,
+                'phone' => $data['phone'] ?? null,
+                'email' => $data['email'] ?? null,
+                'address' => $data['address'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'account_id' => null,
+                'is_active' => $request->boolean('is_active', true),
+                'is_deleted' => false,
+                'is_locked' => false,
+            ]);
 
-        return redirect('/customers')->with('success', 'تمت إضافة العميل بنجاح.');
+            $account = $accountCreationService->createCustomerAccount($customer);
+
+            $customer->update([
+                'account_id' => $account->id,
+            ]);
+        });
+
+        return redirect('/customers')->with('success', 'تمت إضافة العميل وإنشاء حسابه المحاسبي بنجاح.');
     }
 
     public function edit(Customer $customer): Response
@@ -129,12 +157,18 @@ class CustomerController extends Controller
             abort(404);
         }
 
+        if (!$this->isAdmin() && $customer->branch_id && (int) $customer->branch_id !== (int) auth()->user()?->branch_id) {
+            abort(403, 'ليس لديك صلاحية لتعديل هذا العميل.');
+        }
+
+        $customer->load('account:id,name,code');
+
         return Inertia::render('Customers/Edit', [
             'customer' => $customer,
         ]);
     }
 
-    public function update(Request $request, Customer $customer): RedirectResponse
+    public function update(Request $request, Customer $customer, AccountCreationService $accountCreationService): RedirectResponse
     {
         $this->authorizePermission('customers.update', 'ليس لديك صلاحية لتعديل العملاء.');
 
@@ -142,6 +176,10 @@ class CustomerController extends Controller
             return back()->withErrors([
                 'edit' => 'لا يمكن تعديل عميل مقفل.',
             ]);
+        }
+
+        if (!$this->isAdmin() && $customer->branch_id && (int) $customer->branch_id !== (int) auth()->user()?->branch_id) {
+            abort(403, 'ليس لديك صلاحية لتعديل هذا العميل.');
         }
 
         $data = $request->validate([
@@ -177,17 +215,27 @@ class CustomerController extends Controller
             ])->withInput();
         }
 
-        $customer->update([
-            'name' => $name,
-            'code' => $code,
-            'phone' => $data['phone'] ?? null,
-            'email' => $data['email'] ?? null,
-            'address' => $data['address'] ?? null,
-            'notes' => $data['notes'] ?? null,
-            'is_active' => $request->boolean('is_active', true),
-        ]);
+        DB::transaction(function () use ($request, $customer, $data, $name, $code, $accountCreationService) {
+            $customer->update([
+                'name' => $name,
+                'code' => $code,
+                'phone' => $data['phone'] ?? null,
+                'email' => $data['email'] ?? null,
+                'address' => $data['address'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'is_active' => $request->boolean('is_active', true),
+            ]);
 
-        return redirect('/customers')->with('success', 'تم تعديل العميل بنجاح.');
+            if (!$customer->account_id) {
+                $account = $accountCreationService->createCustomerAccount($customer);
+
+                $customer->update([
+                    'account_id' => $account->id,
+                ]);
+            }
+        });
+
+        return redirect('/customers')->with('success', 'تم تعديل العميل والتأكد من حسابه المحاسبي بنجاح.');
     }
 
     public function destroy(Customer $customer): RedirectResponse
@@ -198,6 +246,10 @@ class CustomerController extends Controller
             return back()->withErrors([
                 'delete' => 'لا يمكن حذف عميل مقفل.',
             ]);
+        }
+
+        if (!$this->isAdmin() && $customer->branch_id && (int) $customer->branch_id !== (int) auth()->user()?->branch_id) {
+            abort(403, 'ليس لديك صلاحية لحذف هذا العميل.');
         }
 
         $customer->update([

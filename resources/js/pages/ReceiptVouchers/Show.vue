@@ -9,6 +9,7 @@ import PageHero from '@/Components/App/PageHero.vue'
 const props = defineProps({
   receiptVoucher: Object,
   reverseEntry: Object,
+  linkedOrder: Object,
   permissions: Object,
   receivedFromName: String,
   amountInWords: String,
@@ -34,6 +35,21 @@ const statusLabel = (status) => {
   }
 
   return labels[status] || '-'
+}
+
+const linkedOrderRemaining = () => {
+  if (!props.linkedOrder) return 0
+
+  return Math.max(
+    0,
+    Number(props.linkedOrder.total_price || 0) - Number(props.linkedOrder.paid_amount || 0)
+  )
+}
+
+const linkedOrderRemainingBeforeThisReceipt = () => {
+  if (!props.linkedOrder) return 0
+
+  return linkedOrderRemaining() + Number(props.receiptVoucher.amount || 0)
 }
 
 const printVoucher = () => {
@@ -93,6 +109,9 @@ const cancelVoucher = () => {
               <div class="company-subtitle">
                 الفرع المصدر للإيصال: {{ props.receiptVoucher.branch?.name || '-' }}
               </div>
+              <div v-if="props.linkedOrder" class="company-subtitle">
+                مرتبط بفاتورة بيع رقم: {{ props.linkedOrder.order_number }}
+              </div>
             </div>
 
             <div class="voucher-title-block">
@@ -143,6 +162,28 @@ const cancelVoucher = () => {
             </div>
           </div>
 
+          <div v-if="props.linkedOrder" class="linked-order-box">
+            <div>
+              <span>فاتورة البيع المرتبطة</span>
+              <strong>{{ props.linkedOrder.order_number }}</strong>
+            </div>
+
+            <div>
+              <span>إجمالي الفاتورة</span>
+              <strong>{{ Number(props.linkedOrder.total_price || 0).toFixed(2) }} د.ل</strong>
+            </div>
+
+            <div>
+              <span>المتبقي قبل هذا الإيصال</span>
+              <strong>{{ linkedOrderRemainingBeforeThisReceipt().toFixed(2) }} د.ل</strong>
+            </div>
+
+            <div>
+              <span>المتبقي بعد هذا الإيصال</span>
+              <strong>{{ linkedOrderRemaining().toFixed(2) }} د.ل</strong>
+            </div>
+          </div>
+
           <div class="amount-line">
             <div class="amount-box">
               <span>المبلغ رقماً</span>
@@ -184,9 +225,49 @@ const cancelVoucher = () => {
           </div>
 
           <div class="footer-note">
-            هذا الإيصال صادر من فرع: {{ props.receiptVoucher.branch?.name || '-' }} — فقط لا يعتمد إلا بتوقيع المخولين.
+            هذا الإيصال صادر من فرع: {{ props.receiptVoucher.branch?.name || '-' }} — بنيس للحديد الصناعي.
           </div>
         </section>
+
+        <CardBox v-if="props.linkedOrder" class="no-print">
+          <CardBoxComponentHeader title="الفاتورة المرتبطة" />
+
+          <div class="grid gap-4 p-5 md:grid-cols-4">
+            <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <div class="text-xs font-bold text-slate-400">رقم فاتورة البيع</div>
+              <div class="mt-2 font-black text-slate-800">
+                {{ props.linkedOrder.order_number }}
+              </div>
+            </div>
+
+            <div class="rounded-2xl bg-indigo-50 p-4 ring-1 ring-indigo-200">
+              <div class="text-xs font-bold text-indigo-700">إجمالي الفاتورة</div>
+              <div class="mt-2 font-black text-indigo-700">
+                {{ Number(props.linkedOrder.total_price || 0).toFixed(2) }}
+              </div>
+            </div>
+
+            <div class="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
+              <div class="text-xs font-bold text-emerald-700">المبلغ المدفوع حاليًا</div>
+              <div class="mt-2 font-black text-emerald-700">
+                {{ Number(props.linkedOrder.paid_amount || 0).toFixed(2) }}
+              </div>
+            </div>
+
+            <div class="rounded-2xl bg-rose-50 p-4 ring-1 ring-rose-200">
+              <div class="text-xs font-bold text-rose-700">المتبقي بعد الإيصال</div>
+              <div class="mt-2 font-black text-rose-700">
+                {{ linkedOrderRemaining().toFixed(2) }}
+              </div>
+            </div>
+          </div>
+
+          <div class="px-5 pb-5">
+            <Link :href="`/orders/${props.linkedOrder.id}`">
+              <BaseButton label="فتح فاتورة البيع" color="info" />
+            </Link>
+          </div>
+        </CardBox>
 
         <CardBox class="no-print">
           <CardBoxComponentHeader title="القيد المحاسبي" />
@@ -346,7 +427,8 @@ const cancelVoucher = () => {
 .voucher-cell span,
 .amount-box span,
 .words-box span,
-.accounting-strip span {
+.accounting-strip span,
+.linked-order-box span {
   display: block;
   font-size: 11px;
   font-weight: 900;
@@ -396,12 +478,29 @@ const cancelVoucher = () => {
 .voucher-cell strong,
 .amount-box strong,
 .words-box strong,
-.accounting-strip strong {
+.accounting-strip strong,
+.linked-order-box strong {
   display: block;
   font-size: 15px;
   font-weight: 900;
   color: #0f172a;
   line-height: 1.5;
+}
+
+.linked-order-box {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+  border: 2px solid #047857;
+  background: #ecfdf5;
+  padding: 8px;
+}
+
+.linked-order-box > div {
+  background: white;
+  border: 1px solid #a7f3d0;
+  padding: 8px 10px;
 }
 
 .amount-line {
@@ -506,6 +605,11 @@ const cancelVoucher = () => {
   .words-box {
     padding: 7px 8px !important;
     min-height: 48px !important;
+  }
+
+  .linked-order-box {
+    padding: 6px !important;
+    gap: 6px !important;
   }
 
   .description-cell {

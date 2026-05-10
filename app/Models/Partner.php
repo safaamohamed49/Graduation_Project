@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Partner extends Model
@@ -30,15 +31,25 @@ class Partner extends Model
         'is_active' => 'boolean',
     ];
 
-    public function paymentVouchers(): HasMany
-      {
-             return $this->hasMany(PaymentVoucher::class, 'beneficiary_id')
-             ->where('beneficiary_type', 'partner');
-      }
+    public function capitalAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'capital_account_id');
+    }
 
-   public function receiptVouchers(): HasMany
-{
-    return $this->hasMany(ReceiptVoucher::class, 'beneficiary_id')
-        ->where('beneficiary_type', 'partner');
-}
+    public function currentAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'current_account_id');
+    }
+
+    public function paymentVouchers(): HasMany
+    {
+        return $this->hasMany(PaymentVoucher::class, 'beneficiary_id')
+            ->where('beneficiary_type', 'partner');
+    }
+
+    public function receiptVouchers(): HasMany
+    {
+        return $this->hasMany(ReceiptVoucher::class, 'received_from_id')
+            ->where('received_from_type', 'partner');
+    }
 }

@@ -12,6 +12,7 @@ use App\Models\JournalEntryLine;
 use App\Models\Partner;
 use App\Models\PaymentMethod;
 use App\Models\PaymentVoucher;
+use App\Models\PurchaseInvoice;
 use App\Models\Supplier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -62,6 +63,7 @@ class PaymentVoucherController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('voucher_number', 'like', "%{$search}%")
                     ->orWhere('beneficiary_type', 'like', "%{$search}%")
+                    ->orWhere('reference_type', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%");
             });
         }
@@ -123,6 +125,15 @@ class PaymentVoucherController extends Controller
         }
 
         return DB::transaction(function () use ($data, $user, $branchId, $financialAccount, $debitAccountId) {
+            $linkedPurchaseInvoice = $this->resolveLinkedPurchaseInvoiceForPayment($data, (int) $branchId);
+
+            if ($linkedPurchaseInvoice) {
+                $this->ensureCanPayForPurchaseInvoice(
+                    invoice: $linkedPurchaseInvoice,
+                    amount: (float) $data['amount']
+                );
+            }
+
             $voucher = PaymentVoucher::create([
                 'voucher_number' => $this->generateVoucherNumber(),
                 'voucher_date' => $data['voucher_date'],
@@ -135,8 +146,8 @@ class PaymentVoucherController extends Controller
                 'account_id' => $debitAccountId,
                 'amount' => $data['amount'],
                 'description' => $data['description'] ?? null,
-                'reference_type' => null,
-                'reference_id' => null,
+                'reference_type' => $linkedPurchaseInvoice ? 'purchase_invoice' : null,
+                'reference_id' => $linkedPurchaseInvoice?->id,
                 'journal_entry_id' => null,
                 'created_by_user_id' => $user->id,
                 'status' => 'posted',
@@ -155,9 +166,13 @@ class PaymentVoucherController extends Controller
                 'journal_entry_id' => $journalEntry->id,
             ]);
 
+            if ($linkedPurchaseInvoice) {
+                $this->refreshPurchaseInvoicePaymentStatus($linkedPurchaseInvoice);
+            }
+
             return redirect()
                 ->route('payment-vouchers.index')
-                ->with('success', 'تم إنشاء إيصال الصرف والقيد المحاسبي بنجاح.');
+                ->with('success', 'تم إنشاء إيصال الصرف والقيد المحاسبي وتحديث فاتورة الشراء المرتبطة بنجاح.');
         });
     }
 
@@ -185,9 +200,19 @@ class PaymentVoucherController extends Controller
             ->latest('id')
             ->first();
 
+        $linkedPurchaseInvoice = null;
+
+        if ($paymentVoucher->reference_type === 'purchase_invoice' && $paymentVoucher->reference_id) {
+            $linkedPurchaseInvoice = PurchaseInvoice::query()
+                ->with(['supplier:id,name,code,phone'])
+                ->where('id', $paymentVoucher->reference_id)
+                ->first();
+        }
+
         return Inertia::render('PaymentVouchers/Show', [
             'paymentVoucher' => $paymentVoucher,
             'reverseEntry' => $reverseEntry,
+            'linkedPurchaseInvoice' => $linkedPurchaseInvoice,
             'beneficiaryName' => $this->beneficiaryName($paymentVoucher),
             'amountInWords' => $this->amountToArabicWords((float) $paymentVoucher->amount),
             'permissions' => [
@@ -240,6 +265,10 @@ class PaymentVoucherController extends Controller
         $data = $this->validatedData($request);
         $user = auth()->user();
 
+        $oldLinkedPurchaseInvoiceId = $paymentVoucher->reference_type === 'purchase_invoice'
+            ? $paymentVoucher->reference_id
+            : null;
+
         $financialAccount = FinancialAccount::query()
             ->with('account')
             ->findOrFail($data['financial_account_id']);
@@ -268,7 +297,17 @@ class PaymentVoucherController extends Controller
             ])->withInput();
         }
 
-        return DB::transaction(function () use ($paymentVoucher, $data, $user, $branchId, $financialAccount, $debitAccountId) {
+        return DB::transaction(function () use ($paymentVoucher, $data, $user, $branchId, $financialAccount, $debitAccountId, $oldLinkedPurchaseInvoiceId) {
+            $linkedPurchaseInvoice = $this->resolveLinkedPurchaseInvoiceForPayment($data, (int) $branchId);
+
+            if ($linkedPurchaseInvoice) {
+                $this->ensureCanPayForPurchaseInvoice(
+                    invoice: $linkedPurchaseInvoice,
+                    amount: (float) $data['amount'],
+                    ignoredVoucherId: $paymentVoucher->id
+                );
+            }
+
             $paymentVoucher->update([
                 'voucher_date' => $data['voucher_date'],
                 'branch_id' => $branchId,
@@ -280,6 +319,8 @@ class PaymentVoucherController extends Controller
                 'account_id' => $debitAccountId,
                 'amount' => $data['amount'],
                 'description' => $data['description'] ?? null,
+                'reference_type' => $linkedPurchaseInvoice ? 'purchase_invoice' : null,
+                'reference_id' => $linkedPurchaseInvoice?->id,
                 'created_by_user_id' => $paymentVoucher->created_by_user_id ?: $user->id,
                 'status' => 'posted',
             ]);
@@ -324,9 +365,24 @@ class PaymentVoucherController extends Controller
                 data: $data
             );
 
+            if ($oldLinkedPurchaseInvoiceId) {
+                $oldInvoice = PurchaseInvoice::query()
+                    ->where('id', $oldLinkedPurchaseInvoiceId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($oldInvoice) {
+                    $this->refreshPurchaseInvoicePaymentStatus($oldInvoice);
+                }
+            }
+
+            if ($linkedPurchaseInvoice) {
+                $this->refreshPurchaseInvoicePaymentStatus($linkedPurchaseInvoice);
+            }
+
             return redirect()
                 ->route('payment-vouchers.show', $paymentVoucher)
-                ->with('success', 'تم تعديل إيصال الصرف وتحديث القيد المحاسبي بنجاح.');
+                ->with('success', 'تم تعديل إيصال الصرف وتحديث القيد وفاتورة الشراء المرتبطة بنجاح.');
         });
     }
 
@@ -354,6 +410,10 @@ class PaymentVoucherController extends Controller
 
         return DB::transaction(function () use ($paymentVoucher) {
             $user = auth()->user();
+
+            $linkedPurchaseInvoiceId = $paymentVoucher->reference_type === 'purchase_invoice'
+                ? $paymentVoucher->reference_id
+                : null;
 
             $reverseEntry = JournalEntry::create([
                 'entry_number' => $this->generateJournalEntryNumber(),
@@ -388,9 +448,20 @@ class PaymentVoucherController extends Controller
                 ),
             ]);
 
+            if ($linkedPurchaseInvoiceId) {
+                $invoice = PurchaseInvoice::query()
+                    ->where('id', $linkedPurchaseInvoiceId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($invoice) {
+                    $this->refreshPurchaseInvoicePaymentStatus($invoice);
+                }
+            }
+
             return redirect()
                 ->route('payment-vouchers.show', $paymentVoucher)
-                ->with('success', 'تم إلغاء إيصال الصرف وإنشاء القيد العكسي بنجاح.');
+                ->with('success', 'تم إلغاء إيصال الصرف وإنشاء القيد العكسي وتحديث فاتورة الشراء المرتبطة بنجاح.');
         });
     }
 
@@ -405,6 +476,9 @@ class PaymentVoucherController extends Controller
             'expense_category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string'],
+
+            'reference_type' => ['nullable', 'string', 'in:purchase_invoice'],
+            'reference_id' => ['nullable', 'integer', 'exists:purchase_invoices,id'],
         ]);
     }
 
@@ -436,6 +510,8 @@ class PaymentVoucherController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'code', 'account_id']),
 
+            'supplierOpenPurchaseInvoices' => $this->openSupplierPurchaseInvoices(),
+
             'customers' => Customer::query()
                 ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $user->branch_id))
                 ->where('is_deleted', false)
@@ -454,6 +530,116 @@ class PaymentVoucherController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'current_account_id']),
         ];
+    }
+
+    private function openSupplierPurchaseInvoices()
+    {
+        return PurchaseInvoice::query()
+            ->with(['supplier:id,name,code,phone'])
+            ->where('is_deleted', false)
+            ->whereNotNull('supplier_id')
+            ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', auth()->user()?->branch_id))
+            ->whereRaw('(total_price - paid_amount) > 0')
+            ->orderByDesc('invoice_date')
+            ->get([
+                'id',
+                'invoice_number',
+                'branch_id',
+                'supplier_id',
+                'invoice_date',
+                'total_price',
+                'paid_amount',
+                'payment_status',
+            ])
+            ->map(function (PurchaseInvoice $invoice) {
+                return [
+                    'id' => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'branch_id' => $invoice->branch_id,
+                    'supplier_id' => $invoice->supplier_id,
+                    'supplier_name' => $invoice->supplier?->name,
+                    'invoice_date' => $invoice->invoice_date?->format('Y-m-d'),
+                    'total_price' => (float) $invoice->total_price,
+                    'paid_amount' => (float) $invoice->paid_amount,
+                    'remaining_amount' => max(0, (float) $invoice->total_price - (float) $invoice->paid_amount),
+                    'payment_status' => $invoice->payment_status,
+                ];
+            })
+            ->values();
+    }
+
+    private function resolveLinkedPurchaseInvoiceForPayment(array $data, int $branchId): ?PurchaseInvoice
+    {
+        if (($data['reference_type'] ?? null) !== 'purchase_invoice' || empty($data['reference_id'])) {
+            return null;
+        }
+
+        if ($data['beneficiary_type'] !== 'supplier') {
+            abort(422, 'ربط إيصال الصرف بفاتورة شراء متاح فقط عند اختيار الصرف لمورد.');
+        }
+
+        $invoice = PurchaseInvoice::query()
+            ->where('id', $data['reference_id'])
+            ->where('is_deleted', false)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if (!$this->isAdmin() && (int) $invoice->branch_id !== $branchId) {
+            abort(403, 'ليس لديك صلاحية للصرف على هذه الفاتورة.');
+        }
+
+        if ((int) $invoice->supplier_id !== (int) ($data['beneficiary_id'] ?? 0)) {
+            abort(422, 'فاتورة الشراء المختارة لا تخص هذا المورد.');
+        }
+
+        return $invoice;
+    }
+
+    private function ensureCanPayForPurchaseInvoice(
+        PurchaseInvoice $invoice,
+        float $amount,
+        ?int $ignoredVoucherId = null
+    ): void {
+        $paymentsQuery = PaymentVoucher::query()
+            ->where('status', 'posted')
+            ->where('reference_type', 'purchase_invoice')
+            ->where('reference_id', $invoice->id);
+
+        if ($ignoredVoucherId) {
+            $paymentsQuery->where('id', '!=', $ignoredVoucherId);
+        }
+
+        $alreadyPaid = (float) $paymentsQuery->sum('amount');
+        $remaining = max(0, (float) $invoice->total_price - $alreadyPaid);
+
+        if ($amount > $remaining) {
+            abort(422, 'لا يمكن صرف مبلغ أكبر من المتبقي على فاتورة الشراء. المتبقي: ' . number_format($remaining, 2));
+        }
+    }
+
+    private function refreshPurchaseInvoicePaymentStatus(PurchaseInvoice $invoice): void
+    {
+        $invoice->refresh();
+
+        $paymentsTotal = PaymentVoucher::query()
+            ->where('status', 'posted')
+            ->where('reference_type', 'purchase_invoice')
+            ->where('reference_id', $invoice->id)
+            ->sum('amount');
+
+        $total = (float) $invoice->total_price;
+        $paid = min((float) $paymentsTotal, $total);
+
+        $paymentStatus = match (true) {
+            $paid >= $total && $total > 0 => 'paid',
+            $paid > 0 => 'partial',
+            default => 'due',
+        };
+
+        $invoice->update([
+            'paid_amount' => $paid,
+            'payment_status' => $paymentStatus,
+        ]);
     }
 
     private function ensureFinancialAccountAccess(FinancialAccount $financialAccount): void

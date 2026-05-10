@@ -10,6 +10,7 @@ const props = defineProps({
   paymentMethods: Array,
   expenseCategories: Array,
   suppliers: Array,
+  supplierOpenPurchaseInvoices: Array,
   customers: Array,
   employees: Array,
   partners: Array,
@@ -24,6 +25,8 @@ const form = useForm({
   expense_category_id: '',
   amount: '',
   description: '',
+  reference_type: '',
+  reference_id: '',
 })
 
 const beneficiaryTypes = [
@@ -61,6 +64,24 @@ const showExpenseCategorySelect = computed(() => {
   return ['expense', 'salary'].includes(form.beneficiary_type)
 })
 
+const showPurchaseInvoiceLink = computed(() => {
+  return form.beneficiary_type === 'supplier' && !!form.beneficiary_id
+})
+
+const supplierInvoices = computed(() => {
+  if (!showPurchaseInvoiceLink.value) return []
+
+  return (props.supplierOpenPurchaseInvoices ?? []).filter((invoice) => {
+    return Number(invoice.supplier_id) === Number(form.beneficiary_id)
+  })
+})
+
+const selectedPurchaseInvoice = computed(() => {
+  if (form.reference_type !== 'purchase_invoice' || !form.reference_id) return null
+
+  return supplierInvoices.value.find((invoice) => Number(invoice.id) === Number(form.reference_id)) ?? null
+})
+
 const beneficiaryLabel = computed(() => {
   if (form.beneficiary_type === 'supplier') return 'المورد'
   if (form.beneficiary_type === 'customer') return 'العميل'
@@ -86,15 +107,48 @@ const creditSideLabel = computed(() => {
   return selectedFinancialAccount.value?.name || 'الخزينة / البنك'
 })
 
+const remainingPurchaseInvoiceAmount = computed(() => {
+  return Number(selectedPurchaseInvoice.value?.remaining_amount || 0)
+})
+
 watch(
   () => form.beneficiary_type,
   () => {
     form.beneficiary_id = ''
     form.expense_category_id = ''
+    form.reference_type = ''
+    form.reference_id = ''
 
     if (form.beneficiary_type === 'salary') {
       const salaryCategory = props.expenseCategories.find((item) => item.code === 'SALARY')
       form.expense_category_id = salaryCategory?.id || ''
+    }
+  }
+)
+
+watch(
+  () => form.beneficiary_id,
+  () => {
+    form.reference_type = ''
+    form.reference_id = ''
+  }
+)
+
+watch(
+  () => form.reference_id,
+  () => {
+    if (form.reference_type === 'purchase_invoice' && selectedPurchaseInvoice.value) {
+      form.amount = remainingPurchaseInvoiceAmount.value
+      form.description = `صرف على فاتورة شراء رقم ${selectedPurchaseInvoice.value.invoice_number}`
+    }
+  }
+)
+
+watch(
+  () => form.reference_type,
+  (value) => {
+    if (value !== 'purchase_invoice') {
+      form.reference_id = ''
     }
   }
 )
@@ -109,7 +163,7 @@ const submit = () => {
     page-title="إضافة إيصال صرف"
     hero-badge="الخزينة / إيصال صرف"
     hero-title="إضافة إيصال صرف جديد"
-    hero-description="اختاري الخزينة أو البنك، وحددي نوع المستفيد حتى يتم توليد القيد المحاسبي المزدوج تلقائياً."
+    hero-description="اختاري الخزينة أو البنك وحددي نوع المستفيد. يمكن ربط الصرف بفاتورة شراء مفتوحة ليتم تحديث المدفوع والمتبقي تلقائيًا."
     hero-back-href="/payment-vouchers"
     hero-gradient-class="bg-gradient-to-br from-rose-900 via-slate-900 to-orange-800"
     card-title="بيانات إيصال الصرف"
@@ -141,12 +195,12 @@ const submit = () => {
       </div>
 
       <div>
-        <label class="mb-2 block text-sm font-black text-slate-700">طريقة الدفع</label>
+        <label class="mb-2 block text-sm font-black text-slate-700">طريقة الصرف</label>
         <select
           v-model="form.payment_method_id"
           class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none transition focus:border-rose-500 focus:ring-4 focus:ring-rose-100"
         >
-          <option value="">اختاري طريقة الدفع</option>
+          <option value="">اختاري طريقة الصرف</option>
           <option v-for="method in props.paymentMethods" :key="method.id" :value="method.id">
             {{ method.name }}
           </option>
@@ -204,9 +258,96 @@ const submit = () => {
         </div>
       </div>
 
+      <div v-if="showPurchaseInvoiceLink" class="md:col-span-2 rounded-[28px] bg-rose-50 p-5 ring-1 ring-rose-200">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 class="text-lg font-black text-rose-800">ربط الصرف بفاتورة شراء</h3>
+            <p class="mt-1 text-sm font-bold text-rose-600">
+              اختاري فاتورة مفتوحة للمورد ليتم تحديث المصروف والمتبقي تلقائيًا.
+            </p>
+          </div>
+
+          <div class="rounded-2xl bg-white px-4 py-3 text-center ring-1 ring-rose-200">
+            <div class="text-xs font-bold text-rose-500">الفواتير المفتوحة</div>
+            <div class="mt-1 text-2xl font-black text-rose-700">
+              {{ supplierInvoices.length }}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="mb-2 block text-sm font-black text-slate-700">نوع المرجع</label>
+            <select
+              v-model="form.reference_type"
+              class="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none transition focus:border-rose-500 focus:ring-4 focus:ring-rose-100"
+            >
+              <option value="">صرف غير مربوط بفاتورة</option>
+              <option value="purchase_invoice">صرف على فاتورة شراء</option>
+            </select>
+            <div v-if="form.errors.reference_type" class="mt-1 text-sm text-red-600">
+              {{ form.errors.reference_type }}
+            </div>
+          </div>
+
+          <div v-if="form.reference_type === 'purchase_invoice'">
+            <label class="mb-2 block text-sm font-black text-slate-700">فاتورة الشراء</label>
+            <select
+              v-model="form.reference_id"
+              class="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none transition focus:border-rose-500 focus:ring-4 focus:ring-rose-100"
+            >
+              <option value="">اختاري الفاتورة</option>
+              <option v-for="invoice in supplierInvoices" :key="invoice.id" :value="invoice.id">
+                {{ invoice.invoice_number }} - المتبقي {{ Number(invoice.remaining_amount || 0).toFixed(2) }}
+              </option>
+            </select>
+            <div v-if="form.errors.reference_id" class="mt-1 text-sm text-red-600">
+              {{ form.errors.reference_id }}
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="selectedPurchaseInvoice"
+          class="mt-4 grid gap-3 md:grid-cols-4"
+        >
+          <div class="rounded-2xl bg-white p-4 ring-1 ring-rose-100">
+            <div class="text-xs font-bold text-slate-400">إجمالي الفاتورة</div>
+            <div class="mt-1 text-xl font-black text-slate-800">
+              {{ Number(selectedPurchaseInvoice.total_price || 0).toFixed(2) }}
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-white p-4 ring-1 ring-rose-100">
+            <div class="text-xs font-bold text-slate-400">مصروف سابقًا</div>
+            <div class="mt-1 text-xl font-black text-indigo-700">
+              {{ Number(selectedPurchaseInvoice.paid_amount || 0).toFixed(2) }}
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-white p-4 ring-1 ring-rose-100">
+            <div class="text-xs font-bold text-slate-400">المتبقي</div>
+            <div class="mt-1 text-xl font-black text-rose-700">
+              {{ Number(selectedPurchaseInvoice.remaining_amount || 0).toFixed(2) }}
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-white p-4 ring-1 ring-rose-100">
+            <div class="text-xs font-bold text-slate-400">تاريخ الفاتورة</div>
+            <div class="mt-1 text-xl font-black text-slate-800">
+              {{ selectedPurchaseInvoice.invoice_date || '-' }}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div>
         <label class="mb-2 block text-sm font-black text-slate-700">المبلغ</label>
         <FormControl v-model="form.amount" type="number" step="0.01" placeholder="0.00" />
+        <p v-if="selectedPurchaseInvoice" class="mt-1 text-xs font-bold text-rose-600">
+          لا يمكن أن يتجاوز الصرف المتبقي على الفاتورة:
+          {{ remainingPurchaseInvoiceAmount.toFixed(2) }}
+        </p>
         <div v-if="form.errors.amount" class="mt-1 text-sm text-red-600">
           {{ form.errors.amount }}
         </div>
@@ -251,7 +392,7 @@ const submit = () => {
         </div>
 
         <div class="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-          في إيصال الصرف: الخزينة أو البنك دائماً دائن.
+          في إيصال الصرف: المستفيد أو المصروف مدين، والخزينة أو البنك دائن.
         </div>
       </div>
     </div>

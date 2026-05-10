@@ -15,6 +15,7 @@ class ReceiptVoucher extends Model
         'payment_method_id',
         'received_from_type',
         'received_from_id',
+        'partner_transaction_type',
         'account_id',
         'amount',
         'description',
@@ -38,12 +39,6 @@ class ReceiptVoucher extends Model
         'amount' => 'decimal:2',
     ];
 
-    /*
-    |--------------------------------------------------------------------------
-    | العلاقات الأساسية
-    |--------------------------------------------------------------------------
-    */
-
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
@@ -59,15 +54,8 @@ class ReceiptVoucher extends Model
         return $this->belongsTo(PaymentMethod::class);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | علاقات محاسبية مهمة
-    |--------------------------------------------------------------------------
-    */
-
     public function account(): BelongsTo
     {
-        // الحساب الدائن (الطرف المقبوض منه)
         return $this->belongsTo(Account::class);
     }
 
@@ -81,12 +69,6 @@ class ReceiptVoucher extends Model
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Accessor مفيد للواجهة
-    |--------------------------------------------------------------------------
-    */
-
     public function getReceivedFromLabelAttribute(): string
     {
         return match ($this->received_from_type) {
@@ -95,6 +77,15 @@ class ReceiptVoucher extends Model
             'employee' => 'موظف',
             'partner' => 'شريك',
             'other' => 'أخرى',
+            default => '-',
+        };
+    }
+
+    public function getPartnerTransactionTypeLabelAttribute(): string
+    {
+        return match ($this->partner_transaction_type) {
+            'capital' => 'رأس مال شريك',
+            'current' => 'إيداع جاري شريك',
             default => '-',
         };
     }

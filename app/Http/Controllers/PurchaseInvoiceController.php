@@ -2,8 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Account;
 use App\Models\Branch;
+use App\Models\FinancialAccount;
 use App\Models\InventoryBatch;
+use App\Models\JournalEntry;
+use App\Models\JournalEntryLine;
+use App\Models\PaymentMethod;
+use App\Models\PaymentVoucher;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseInvoiceItem;
@@ -29,6 +35,7 @@ class PurchaseInvoiceController extends Controller
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('invoice_number', 'like', "%{$search}%")
+                    ->orWhere('payment_status', 'like', "%{$search}%")
                     ->orWhereHas('supplier', function ($supplierQuery) use ($search) {
                         $supplierQuery->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%");
@@ -56,6 +63,8 @@ class PurchaseInvoiceController extends Controller
             'warehouses' => Warehouse::where('is_active', true)->orderBy('name')->get(),
             'suppliers' => Supplier::where('is_deleted', false)->where('is_active', true)->orderBy('name')->get(),
             'products' => Product::where('is_deleted', false)->where('is_active', true)->orderBy('name')->get(),
+            'financialAccounts' => FinancialAccount::where('is_active', true)->orderBy('name')->get(),
+            'paymentMethods' => PaymentMethod::where('is_active', true)->orderBy('name')->get(),
         ]);
     }
 
@@ -64,10 +73,11 @@ class PurchaseInvoiceController extends Controller
         $data = $this->validateInvoice($request);
 
         DB::transaction(function () use ($data) {
-            $this->createInvoiceWithItemsAndBatches($data);
+            $this->createInvoiceWithItemsBatchesAccountingAndPayment($data);
         });
 
-        return redirect('/purchase-invoices')->with('success', 'تم حفظ فاتورة الشراء وتحديث المخزون بنجاح.');
+        return redirect('/purchase-invoices')
+            ->with('success', 'تم حفظ فاتورة الشراء وتحديث المخزون وإنشاء القيود وإيصال الصرف التلقائي بنجاح.');
     }
 
     public function edit(PurchaseInvoice $purchaseInvoice): Response
@@ -76,7 +86,12 @@ class PurchaseInvoiceController extends Controller
             abort(404);
         }
 
-        $purchaseInvoice->load(['items.product', 'supplier', 'branch', 'warehouse']);
+        $purchaseInvoice->load([
+            'items.product',
+            'supplier',
+            'branch',
+            'warehouse',
+        ]);
 
         return Inertia::render('PurchaseInvoices/Edit', [
             'invoice' => $purchaseInvoice,
@@ -84,6 +99,8 @@ class PurchaseInvoiceController extends Controller
             'warehouses' => Warehouse::where('is_active', true)->orderBy('name')->get(),
             'suppliers' => Supplier::where('is_deleted', false)->where('is_active', true)->orderBy('name')->get(),
             'products' => Product::where('is_deleted', false)->where('is_active', true)->orderBy('name')->get(),
+            'financialAccounts' => FinancialAccount::where('is_active', true)->orderBy('name')->get(),
+            'paymentMethods' => PaymentMethod::where('is_active', true)->orderBy('name')->get(),
         ]);
     }
 
@@ -102,13 +119,26 @@ class PurchaseInvoiceController extends Controller
         $data = $this->validateInvoice($request, $purchaseInvoice->id);
 
         DB::transaction(function () use ($data, $purchaseInvoice) {
+            $this->cancelAutoPaymentVouchersForInvoice($purchaseInvoice);
+
             PurchaseInvoiceItem::where('invoice_id', $purchaseInvoice->id)->delete();
             InventoryBatch::where('purchase_invoice_id', $purchaseInvoice->id)->delete();
 
-            $this->updateInvoiceWithItemsAndBatches($purchaseInvoice, $data);
+            if ($purchaseInvoice->journalEntry) {
+                $this->createReverseEntryForJournal(
+                    journalEntry: $purchaseInvoice->journalEntry,
+                    description: 'قيد عكسي لتعديل فاتورة شراء رقم ' . $purchaseInvoice->invoice_number,
+                    sourceType: PurchaseInvoice::class,
+                    sourceId: $purchaseInvoice->id,
+                    branchId: $purchaseInvoice->branch_id
+                );
+            }
+
+            $this->updateInvoiceWithItemsBatchesAccountingAndPayment($purchaseInvoice, $data);
         });
 
-        return redirect('/purchase-invoices')->with('success', 'تم تعديل فاتورة الشراء وتحديث المخزون بنجاح.');
+        return redirect('/purchase-invoices')
+            ->with('success', 'تم تعديل فاتورة الشراء وتحديث المخزون والقيود وإيصال الصرف التلقائي بنجاح.');
     }
 
     public function destroy(PurchaseInvoice $purchaseInvoice): RedirectResponse
@@ -126,15 +156,30 @@ class PurchaseInvoiceController extends Controller
         }
 
         DB::transaction(function () use ($purchaseInvoice) {
-            $purchaseInvoice->update([
-                'is_deleted' => true,
-                'updated_by_user_id' => auth()->id(),
-            ]);
+            $this->cancelAutoPaymentVouchersForInvoice($purchaseInvoice);
+
+            if ($purchaseInvoice->journalEntry) {
+                $this->createReverseEntryForJournal(
+                    journalEntry: $purchaseInvoice->journalEntry,
+                    description: 'قيد عكسي لحذف فاتورة شراء رقم ' . $purchaseInvoice->invoice_number,
+                    sourceType: PurchaseInvoice::class,
+                    sourceId: $purchaseInvoice->id,
+                    branchId: $purchaseInvoice->branch_id
+                );
+            }
 
             InventoryBatch::where('purchase_invoice_id', $purchaseInvoice->id)->delete();
+
+            $purchaseInvoice->update([
+                'is_deleted' => true,
+                'paid_amount' => 0,
+                'payment_status' => 'due',
+                'updated_by_user_id' => auth()->id(),
+            ]);
         });
 
-        return redirect('/purchase-invoices')->with('success', 'تم حذف فاتورة الشراء منطقيًا بنجاح.');
+        return redirect('/purchase-invoices')
+            ->with('success', 'تم حذف فاتورة الشراء منطقيًا وإلغاء إيصالات الصرف التلقائية بقيود عكسية.');
     }
 
     public function extractImage(Request $request)
@@ -313,7 +358,7 @@ class PurchaseInvoiceController extends Controller
             $uniqueRule .= ',' . $invoiceId;
         }
 
-        return $request->validate([
+        $data = $request->validate([
             'invoice_number' => ['required', 'string', 'max:255', $uniqueRule],
             'branch_id' => ['required', 'exists:branches,id'],
             'warehouse_id' => ['required', 'exists:warehouses,id'],
@@ -321,6 +366,10 @@ class PurchaseInvoiceController extends Controller
             'invoice_date' => ['required', 'date'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'total_expenses' => ['nullable', 'numeric', 'min:0'],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'],
+            'payment_status' => ['required', 'string', 'in:paid,due,partial'],
+            'financial_account_id' => ['nullable', 'integer', 'exists:financial_accounts,id'],
+            'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'notes' => ['nullable', 'string'],
 
             'items' => ['required', 'array', 'min:1'],
@@ -329,11 +378,46 @@ class PurchaseInvoiceController extends Controller
             'items.*.price' => ['required', 'numeric', 'min:0'],
             'items.*.notes' => ['nullable', 'string'],
         ]);
+
+        $totals = $this->calculateTotals($data);
+        $paidAmount = (float) ($data['paid_amount'] ?? 0);
+
+        if ($paidAmount > (float) $totals['total_price']) {
+            abort(422, 'المبلغ المدفوع لا يمكن أن يكون أكبر من صافي فاتورة الشراء.');
+        }
+
+        if ($data['payment_status'] === 'paid') {
+            $data['paid_amount'] = $totals['total_price'];
+        }
+
+        if ($data['payment_status'] === 'due') {
+            $data['paid_amount'] = 0;
+            $data['financial_account_id'] = null;
+            $data['payment_method_id'] = null;
+        }
+
+        if ($data['payment_status'] === 'partial' && $paidAmount <= 0) {
+            abort(422, 'في حالة الدفع الجزئي يجب إدخال مبلغ مدفوع أكبر من صفر.');
+        }
+
+        if (in_array($data['payment_status'], ['paid', 'partial'], true)) {
+            if (empty($data['financial_account_id'])) {
+                abort(422, 'يجب اختيار الخزينة أو البنك عند وجود مبلغ مدفوع للمورد.');
+            }
+
+            if (empty($data['payment_method_id'])) {
+                abort(422, 'يجب اختيار طريقة الصرف عند وجود مبلغ مدفوع للمورد.');
+            }
+        }
+
+        return $data;
     }
 
-    private function createInvoiceWithItemsAndBatches(array $data): PurchaseInvoice
+    private function createInvoiceWithItemsBatchesAccountingAndPayment(array $data): PurchaseInvoice
     {
         $totals = $this->calculateTotals($data);
+        $paidAmount = (float) ($data['paid_amount'] ?? 0);
+        $supplier = Supplier::findOrFail($data['supplier_id']);
 
         $invoice = PurchaseInvoice::create([
             'invoice_number' => trim($data['invoice_number']),
@@ -346,6 +430,8 @@ class PurchaseInvoiceController extends Controller
             'total_expenses' => $totals['expenses'],
             'total_price' => $totals['total_price'],
             'total_base_price' => $totals['subtotal'],
+            'paid_amount' => 0,
+            'payment_status' => 'due',
             'journal_entry_id' => null,
             'user_id' => auth()->id(),
             'updated_by_user_id' => null,
@@ -355,12 +441,32 @@ class PurchaseInvoiceController extends Controller
 
         $this->createItemsAndBatches($invoice, $data);
 
+        $journalEntry = $this->createPurchaseJournalEntry($invoice, $supplier);
+
+        $invoice->update([
+            'journal_entry_id' => $journalEntry->id,
+        ]);
+
+        if ($paidAmount > 0) {
+            $financialAccount = $this->resolveFinancialAccount((int) $data['financial_account_id']);
+
+            $this->createAutoPaymentVoucher(
+                invoice: $invoice,
+                supplier: $supplier,
+                financialAccount: $financialAccount,
+                paymentMethodId: $data['payment_method_id'] ?? null,
+                amount: $paidAmount
+            );
+        }
+
         return $invoice;
     }
 
-    private function updateInvoiceWithItemsAndBatches(PurchaseInvoice $invoice, array $data): void
+    private function updateInvoiceWithItemsBatchesAccountingAndPayment(PurchaseInvoice $invoice, array $data): void
     {
         $totals = $this->calculateTotals($data);
+        $paidAmount = (float) ($data['paid_amount'] ?? 0);
+        $supplier = Supplier::findOrFail($data['supplier_id']);
 
         $invoice->update([
             'invoice_number' => trim($data['invoice_number']),
@@ -373,11 +479,239 @@ class PurchaseInvoiceController extends Controller
             'total_expenses' => $totals['expenses'],
             'total_price' => $totals['total_price'],
             'total_base_price' => $totals['subtotal'],
+            'paid_amount' => 0,
+            'payment_status' => 'due',
             'updated_by_user_id' => auth()->id(),
             'notes' => $data['notes'] ?? null,
         ]);
 
         $this->createItemsAndBatches($invoice, $data);
+
+        $journalEntry = $this->createPurchaseJournalEntry($invoice, $supplier);
+
+        $invoice->update([
+            'journal_entry_id' => $journalEntry->id,
+        ]);
+
+        if ($paidAmount > 0) {
+            $financialAccount = $this->resolveFinancialAccount((int) $data['financial_account_id']);
+
+            $this->createAutoPaymentVoucher(
+                invoice: $invoice,
+                supplier: $supplier,
+                financialAccount: $financialAccount,
+                paymentMethodId: $data['payment_method_id'] ?? null,
+                amount: $paidAmount
+            );
+        } else {
+            $this->refreshPurchaseInvoicePaymentStatus($invoice);
+        }
+    }
+
+    private function createPurchaseJournalEntry(PurchaseInvoice $invoice, Supplier $supplier): JournalEntry
+    {
+        $inventoryAccountId = $this->requiredAccountIdByCode('1140', 'حساب المخزون غير موجود.');
+
+        if (!$supplier->account_id) {
+            abort(422, 'المورد غير مربوط بحساب محاسبي.');
+        }
+
+        $journalEntry = JournalEntry::create([
+            'entry_number' => $this->generateJournalEntryNumber(),
+            'entry_date' => $invoice->invoice_date,
+            'branch_id' => $invoice->branch_id,
+            'description' => 'قيد فاتورة شراء رقم ' . $invoice->invoice_number,
+            'source_type' => PurchaseInvoice::class,
+            'source_id' => $invoice->id,
+            'created_by_user_id' => auth()->id(),
+            'status' => 'posted',
+        ]);
+
+        JournalEntryLine::create([
+            'journal_entry_id' => $journalEntry->id,
+            'account_id' => $inventoryAccountId,
+            'debit' => $invoice->total_price,
+            'credit' => 0,
+            'description' => 'إدخال مخزون من فاتورة شراء رقم ' . $invoice->invoice_number,
+            'supplier_id' => $supplier->id,
+        ]);
+
+        JournalEntryLine::create([
+            'journal_entry_id' => $journalEntry->id,
+            'account_id' => $supplier->account_id,
+            'debit' => 0,
+            'credit' => $invoice->total_price,
+            'description' => 'استحقاق للمورد من فاتورة شراء رقم ' . $invoice->invoice_number,
+            'supplier_id' => $supplier->id,
+        ]);
+
+        return $journalEntry;
+    }
+
+    private function createAutoPaymentVoucher(
+        PurchaseInvoice $invoice,
+        Supplier $supplier,
+        FinancialAccount $financialAccount,
+        ?int $paymentMethodId,
+        float $amount
+    ): void {
+        if ($amount <= 0) {
+            return;
+        }
+
+        if (!$financialAccount->account_id) {
+            abort(422, 'الخزينة أو البنك غير مربوط بحساب محاسبي.');
+        }
+
+        if (!$supplier->account_id) {
+            abort(422, 'المورد غير مربوط بحساب محاسبي.');
+        }
+
+        $journalEntry = JournalEntry::create([
+            'entry_number' => $this->generateJournalEntryNumber(),
+            'entry_date' => $invoice->invoice_date,
+            'branch_id' => $invoice->branch_id,
+            'description' => 'قيد إيصال صرف تلقائي لفاتورة الشراء رقم ' . $invoice->invoice_number,
+            'source_type' => PaymentVoucher::class,
+            'source_id' => null,
+            'created_by_user_id' => auth()->id(),
+            'status' => 'posted',
+        ]);
+
+        JournalEntryLine::create([
+            'journal_entry_id' => $journalEntry->id,
+            'account_id' => $supplier->account_id,
+            'debit' => $amount,
+            'credit' => 0,
+            'description' => 'سداد للمورد من فاتورة شراء رقم ' . $invoice->invoice_number,
+            'supplier_id' => $supplier->id,
+        ]);
+
+        JournalEntryLine::create([
+            'journal_entry_id' => $journalEntry->id,
+            'account_id' => $financialAccount->account_id,
+            'debit' => 0,
+            'credit' => $amount,
+            'description' => 'صرف من ' . $financialAccount->name . ' لفاتورة شراء رقم ' . $invoice->invoice_number,
+            'supplier_id' => $supplier->id,
+        ]);
+
+        $voucher = PaymentVoucher::create([
+            'voucher_number' => $this->generatePaymentVoucherNumber(),
+            'voucher_date' => $invoice->invoice_date,
+            'branch_id' => $invoice->branch_id,
+            'financial_account_id' => $financialAccount->id,
+            'payment_method_id' => $paymentMethodId,
+            'beneficiary_type' => 'supplier',
+            'beneficiary_id' => $supplier->id,
+            'expense_category_id' => null,
+            'account_id' => $supplier->account_id,
+            'amount' => $amount,
+            'description' => 'إيصال صرف تلقائي مرتبط بفاتورة الشراء رقم ' . $invoice->invoice_number,
+            'reference_type' => 'purchase_invoice',
+            'reference_id' => $invoice->id,
+            'journal_entry_id' => $journalEntry->id,
+            'created_by_user_id' => auth()->id(),
+            'status' => 'posted',
+        ]);
+
+        $journalEntry->update([
+            'source_id' => $voucher->id,
+        ]);
+
+        $this->refreshPurchaseInvoicePaymentStatus($invoice);
+    }
+
+    private function cancelAutoPaymentVouchersForInvoice(PurchaseInvoice $invoice): void
+    {
+        $autoPayments = PaymentVoucher::query()
+            ->with('journalEntry.lines')
+            ->where('reference_type', 'purchase_invoice')
+            ->where('reference_id', $invoice->id)
+            ->where('description', 'like', 'إيصال صرف تلقائي%')
+            ->where('status', 'posted')
+            ->get();
+
+        foreach ($autoPayments as $voucher) {
+            if ($voucher->journalEntry) {
+                $this->createReverseEntryForJournal(
+                    journalEntry: $voucher->journalEntry,
+                    description: 'قيد عكسي لإلغاء إيصال صرف رقم ' . $voucher->voucher_number,
+                    sourceType: PaymentVoucher::class,
+                    sourceId: $voucher->id,
+                    branchId: $voucher->branch_id
+                );
+            }
+
+            $voucher->update([
+                'status' => 'cancelled',
+                'description' => trim(($voucher->description ?? '') . "\n" . 'تم إلغاء الإيصال تلقائيًا بقيد عكسي.'),
+            ]);
+        }
+
+        $this->refreshPurchaseInvoicePaymentStatus($invoice);
+    }
+
+    private function refreshPurchaseInvoicePaymentStatus(PurchaseInvoice $invoice): void
+    {
+        $invoice->refresh();
+
+        $paymentsTotal = PaymentVoucher::query()
+            ->where('status', 'posted')
+            ->where('reference_type', 'purchase_invoice')
+            ->where('reference_id', $invoice->id)
+            ->sum('amount');
+
+        $total = (float) $invoice->total_price;
+        $paid = min((float) $paymentsTotal, $total);
+
+        $paymentStatus = match (true) {
+            $paid >= $total && $total > 0 => 'paid',
+            $paid > 0 => 'partial',
+            default => 'due',
+        };
+
+        $invoice->update([
+            'paid_amount' => $paid,
+            'payment_status' => $paymentStatus,
+        ]);
+    }
+
+    private function createReverseEntryForJournal(
+        JournalEntry $journalEntry,
+        string $description,
+        string $sourceType,
+        int $sourceId,
+        ?int $branchId
+    ): JournalEntry {
+        $journalEntry->loadMissing('lines');
+
+        $reverseEntry = JournalEntry::create([
+            'entry_number' => $this->generateJournalEntryNumber(),
+            'entry_date' => now(),
+            'branch_id' => $branchId,
+            'description' => $description,
+            'source_type' => $sourceType,
+            'source_id' => $sourceId,
+            'created_by_user_id' => auth()->id(),
+            'status' => 'posted',
+        ]);
+
+        foreach ($journalEntry->lines as $line) {
+            JournalEntryLine::create([
+                'journal_entry_id' => $reverseEntry->id,
+                'account_id' => $line->account_id,
+                'debit' => $line->credit,
+                'credit' => $line->debit,
+                'description' => 'عكس: ' . ($line->description ?? ''),
+                'customer_id' => $line->customer_id,
+                'supplier_id' => $line->supplier_id,
+                'employee_id' => $line->employee_id,
+                'partner_id' => $line->partner_id,
+            ]);
+        }
+
+        return $reverseEntry;
     }
 
     private function calculateTotals(array $data): array
@@ -441,6 +775,49 @@ class PurchaseInvoiceController extends Controller
         return InventoryBatch::where('purchase_invoice_id', $invoice->id)
             ->whereColumn('remaining_quantity', '<', 'quantity')
             ->exists();
+    }
+
+    private function resolveFinancialAccount(int $financialAccountId): FinancialAccount
+    {
+        $financialAccount = FinancialAccount::query()
+            ->where('id', $financialAccountId)
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        if (!$financialAccount->account_id) {
+            abort(422, 'الخزينة أو البنك المختار غير مربوط بحساب محاسبي.');
+        }
+
+        return $financialAccount;
+    }
+
+    private function requiredAccountIdByCode(string $code, string $message): int
+    {
+        $accountId = Account::query()
+            ->where('code', $code)
+            ->value('id');
+
+        if (!$accountId) {
+            abort(422, $message);
+        }
+
+        return (int) $accountId;
+    }
+
+    private function generatePaymentVoucherNumber(): string
+    {
+        $prefix = 'PV-' . now()->format('Ymd') . '-';
+        $lastId = ((int) PaymentVoucher::query()->max('id')) + 1;
+
+        return $prefix . str_pad((string) $lastId, 5, '0', STR_PAD_LEFT);
+    }
+
+    private function generateJournalEntryNumber(): string
+    {
+        $prefix = 'JE-' . now()->format('Ymd') . '-';
+        $lastId = ((int) JournalEntry::query()->max('id')) + 1;
+
+        return $prefix . str_pad((string) $lastId, 5, '0', STR_PAD_LEFT);
     }
 
     private function matchProductByName($products, string $name): ?Product

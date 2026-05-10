@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\FinancialAccount;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
+use App\Models\Order;
 use App\Models\Partner;
 use App\Models\PaymentMethod;
 use App\Models\ReceiptVoucher;
@@ -60,6 +61,8 @@ class ReceiptVoucherController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('voucher_number', 'like', "%{$search}%")
                     ->orWhere('received_from_type', 'like', "%{$search}%")
+                    ->orWhere('partner_transaction_type', 'like', "%{$search}%")
+                    ->orWhere('reference_type', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%");
             });
         }
@@ -121,6 +124,12 @@ class ReceiptVoucherController extends Controller
         }
 
         return DB::transaction(function () use ($data, $user, $branchId, $financialAccount, $creditAccountId) {
+            $linkedOrder = $this->resolveLinkedOrderForReceipt($data, (int) $branchId);
+
+            if ($linkedOrder) {
+                $this->ensureCanReceiveForOrder($linkedOrder, (float) $data['amount']);
+            }
+
             $voucher = ReceiptVoucher::create([
                 'voucher_number' => $this->generateVoucherNumber(),
                 'voucher_date' => $data['voucher_date'],
@@ -129,11 +138,14 @@ class ReceiptVoucherController extends Controller
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'received_from_type' => $data['received_from_type'],
                 'received_from_id' => $data['received_from_id'] ?? null,
+                'partner_transaction_type' => $data['received_from_type'] === 'partner'
+                    ? ($data['partner_transaction_type'] ?? 'current')
+                    : null,
                 'account_id' => $creditAccountId,
                 'amount' => $data['amount'],
                 'description' => $data['description'] ?? null,
-                'reference_type' => null,
-                'reference_id' => null,
+                'reference_type' => $linkedOrder ? 'order' : null,
+                'reference_id' => $linkedOrder?->id,
                 'journal_entry_id' => null,
                 'created_by_user_id' => $user->id,
                 'status' => 'posted',
@@ -152,9 +164,13 @@ class ReceiptVoucherController extends Controller
                 'journal_entry_id' => $journalEntry->id,
             ]);
 
+            if ($linkedOrder) {
+                $this->refreshOrderPaymentStatus($linkedOrder);
+            }
+
             return redirect()
                 ->route('receipt-vouchers.index')
-                ->with('success', 'تم إنشاء إيصال القبض والقيد المحاسبي بنجاح.');
+                ->with('success', 'تم إنشاء إيصال القبض والقيد المحاسبي وتحديث الفاتورة المرتبطة بنجاح.');
         });
     }
 
@@ -181,9 +197,19 @@ class ReceiptVoucherController extends Controller
             ->latest('id')
             ->first();
 
+        $linkedOrder = null;
+
+        if ($receiptVoucher->reference_type === 'order' && $receiptVoucher->reference_id) {
+            $linkedOrder = Order::query()
+                ->with(['customer:id,name,code,phone'])
+                ->where('id', $receiptVoucher->reference_id)
+                ->first();
+        }
+
         return Inertia::render('ReceiptVouchers/Show', [
             'receiptVoucher' => $receiptVoucher,
             'reverseEntry' => $reverseEntry,
+            'linkedOrder' => $linkedOrder,
             'receivedFromName' => $this->receivedFromName($receiptVoucher),
             'amountInWords' => $this->amountToArabicWords((float) $receiptVoucher->amount),
             'permissions' => [
@@ -235,6 +261,10 @@ class ReceiptVoucherController extends Controller
         $data = $this->validatedData($request);
         $user = auth()->user();
 
+        $oldLinkedOrderId = $receiptVoucher->reference_type === 'order'
+            ? $receiptVoucher->reference_id
+            : null;
+
         $financialAccount = FinancialAccount::query()
             ->with('account')
             ->findOrFail($data['financial_account_id']);
@@ -263,7 +293,17 @@ class ReceiptVoucherController extends Controller
             ])->withInput();
         }
 
-        return DB::transaction(function () use ($receiptVoucher, $data, $user, $branchId, $financialAccount, $creditAccountId) {
+        return DB::transaction(function () use ($receiptVoucher, $data, $user, $branchId, $financialAccount, $creditAccountId, $oldLinkedOrderId) {
+            $linkedOrder = $this->resolveLinkedOrderForReceipt($data, (int) $branchId);
+
+            if ($linkedOrder) {
+                $this->ensureCanReceiveForOrder(
+                    order: $linkedOrder,
+                    amount: (float) $data['amount'],
+                    ignoredReceiptId: $receiptVoucher->id
+                );
+            }
+
             $receiptVoucher->update([
                 'voucher_date' => $data['voucher_date'],
                 'branch_id' => $branchId,
@@ -271,9 +311,14 @@ class ReceiptVoucherController extends Controller
                 'payment_method_id' => $data['payment_method_id'] ?? null,
                 'received_from_type' => $data['received_from_type'],
                 'received_from_id' => $data['received_from_id'] ?? null,
+                'partner_transaction_type' => $data['received_from_type'] === 'partner'
+                    ? ($data['partner_transaction_type'] ?? 'current')
+                    : null,
                 'account_id' => $creditAccountId,
                 'amount' => $data['amount'],
                 'description' => $data['description'] ?? null,
+                'reference_type' => $linkedOrder ? 'order' : null,
+                'reference_id' => $linkedOrder?->id,
                 'created_by_user_id' => $receiptVoucher->created_by_user_id ?: $user->id,
                 'status' => 'posted',
             ]);
@@ -318,9 +363,21 @@ class ReceiptVoucherController extends Controller
                 data: $data
             );
 
+            if ($oldLinkedOrderId) {
+                $oldOrder = Order::query()->where('id', $oldLinkedOrderId)->lockForUpdate()->first();
+
+                if ($oldOrder) {
+                    $this->refreshOrderPaymentStatus($oldOrder);
+                }
+            }
+
+            if ($linkedOrder) {
+                $this->refreshOrderPaymentStatus($linkedOrder);
+            }
+
             return redirect()
                 ->route('receipt-vouchers.show', $receiptVoucher)
-                ->with('success', 'تم تعديل إيصال القبض وتحديث القيد المحاسبي بنجاح.');
+                ->with('success', 'تم تعديل إيصال القبض وتحديث القيد والفاتورة المرتبطة بنجاح.');
         });
     }
 
@@ -348,6 +405,10 @@ class ReceiptVoucherController extends Controller
 
         return DB::transaction(function () use ($receiptVoucher) {
             $user = auth()->user();
+
+            $linkedOrderId = $receiptVoucher->reference_type === 'order'
+                ? $receiptVoucher->reference_id
+                : null;
 
             $reverseEntry = JournalEntry::create([
                 'entry_number' => $this->generateJournalEntryNumber(),
@@ -382,9 +443,20 @@ class ReceiptVoucherController extends Controller
                 ),
             ]);
 
+            if ($linkedOrderId) {
+                $order = Order::query()
+                    ->where('id', $linkedOrderId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($order) {
+                    $this->refreshOrderPaymentStatus($order);
+                }
+            }
+
             return redirect()
                 ->route('receipt-vouchers.show', $receiptVoucher)
-                ->with('success', 'تم إلغاء إيصال القبض وإنشاء القيد العكسي بنجاح.');
+                ->with('success', 'تم إلغاء إيصال القبض وإنشاء القيد العكسي وتحديث الفاتورة المرتبطة بنجاح.');
         });
     }
 
@@ -396,9 +468,13 @@ class ReceiptVoucherController extends Controller
             'payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'received_from_type' => ['required', 'string', 'in:customer,supplier,employee,partner,other'],
             'received_from_id' => ['nullable', 'integer'],
+            'partner_transaction_type' => ['nullable', 'string', 'in:capital,current'],
             'account_id' => ['nullable', 'integer', 'exists:accounts,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string'],
+
+            'reference_type' => ['nullable', 'string', 'in:order'],
+            'reference_id' => ['nullable', 'integer', 'exists:orders,id'],
         ]);
     }
 
@@ -425,6 +501,8 @@ class ReceiptVoucherController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'code', 'account_id']),
 
+            'customerOpenOrders' => $this->openCustomerOrders(),
+
             'suppliers' => Supplier::query()
                 ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', $user->branch_id))
                 ->where('is_deleted', false)
@@ -441,7 +519,7 @@ class ReceiptVoucherController extends Controller
             'partners' => Partner::query()
                 ->where('is_active', true)
                 ->orderBy('name')
-                ->get(['id', 'name', 'current_account_id']),
+                ->get(['id', 'name', 'capital_account_id', 'current_account_id']),
 
             'accounts' => Account::query()
                 ->where('is_active', true)
@@ -449,6 +527,115 @@ class ReceiptVoucherController extends Controller
                 ->orderBy('code')
                 ->get(['id', 'code', 'name', 'type', 'nature']),
         ];
+    }
+
+    private function openCustomerOrders()
+    {
+        return Order::query()
+            ->with(['customer:id,name,code,phone'])
+            ->where('is_deleted', false)
+            ->where('status', 'posted')
+            ->whereNotNull('customer_id')
+            ->when(!$this->isAdmin(), fn ($q) => $q->where('branch_id', auth()->user()?->branch_id))
+            ->whereRaw('(total_price - paid_amount) > 0')
+            ->orderByDesc('order_date')
+            ->get([
+                'id',
+                'order_number',
+                'branch_id',
+                'customer_id',
+                'order_date',
+                'total_price',
+                'paid_amount',
+                'payment_status',
+            ])
+            ->map(function (Order $order) {
+                return [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'branch_id' => $order->branch_id,
+                    'customer_id' => $order->customer_id,
+                    'customer_name' => $order->customer?->name,
+                    'order_date' => $order->order_date?->format('Y-m-d'),
+                    'total_price' => (float) $order->total_price,
+                    'paid_amount' => (float) $order->paid_amount,
+                    'remaining_amount' => max(0, (float) $order->total_price - (float) $order->paid_amount),
+                    'payment_status' => $order->payment_status,
+                ];
+            })
+            ->values();
+    }
+
+    private function resolveLinkedOrderForReceipt(array $data, int $branchId): ?Order
+    {
+        if (($data['reference_type'] ?? null) !== 'order' || empty($data['reference_id'])) {
+            return null;
+        }
+
+        if ($data['received_from_type'] !== 'customer') {
+            abort(422, 'ربط الإيصال بفاتورة بيع متاح فقط عند اختيار قبض من عميل.');
+        }
+
+        $order = Order::query()
+            ->where('id', $data['reference_id'])
+            ->where('is_deleted', false)
+            ->where('status', 'posted')
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if (!$this->isAdmin() && (int) $order->branch_id !== $branchId) {
+            abort(403, 'ليس لديك صلاحية للقبض على هذه الفاتورة.');
+        }
+
+        if ((int) $order->customer_id !== (int) ($data['received_from_id'] ?? 0)) {
+            abort(422, 'الفاتورة المختارة لا تخص هذا العميل.');
+        }
+
+        return $order;
+    }
+
+    private function ensureCanReceiveForOrder(Order $order, float $amount, ?int $ignoredReceiptId = null): void
+    {
+        $receiptsQuery = ReceiptVoucher::query()
+            ->where('status', 'posted')
+            ->where('reference_type', 'order')
+            ->where('reference_id', $order->id);
+
+        if ($ignoredReceiptId) {
+            $receiptsQuery->where('id', '!=', $ignoredReceiptId);
+        }
+
+        $alreadyReceived = (float) $receiptsQuery->sum('amount');
+        $remaining = max(0, (float) $order->total_price - $alreadyReceived);
+
+        if ($amount > $remaining) {
+            abort(422, 'لا يمكن قبض مبلغ أكبر من المتبقي على الفاتورة. المتبقي: ' . number_format($remaining, 2));
+        }
+    }
+
+    private function refreshOrderPaymentStatus(Order $order): void
+    {
+        $order->refresh();
+
+        $receiptsTotal = ReceiptVoucher::query()
+            ->where('status', 'posted')
+            ->where('reference_type', 'order')
+            ->where('reference_id', $order->id)
+            ->sum('amount');
+
+        $total = (float) $order->total_price;
+        $paid = min((float) $receiptsTotal, $total);
+
+        $paymentStatus = match (true) {
+            $paid >= $total && $total > 0 => 'paid',
+            $paid > 0 => 'partial',
+            default => 'due',
+        };
+
+        $order->update([
+            'paid_amount' => $paid,
+            'payment_status' => $paymentStatus,
+        ]);
     }
 
     private function ensureFinancialAccountAccess(FinancialAccount $financialAccount): void
@@ -522,7 +709,10 @@ class ReceiptVoucherController extends Controller
             'customer' => $this->customerAccountId((int) ($data['received_from_id'] ?? 0), $branchId),
             'supplier' => $this->supplierAccountId((int) ($data['received_from_id'] ?? 0), $branchId),
             'employee' => $this->employeeAccountId((int) ($data['received_from_id'] ?? 0), $branchId),
-            'partner' => $this->partnerCurrentAccountId((int) ($data['received_from_id'] ?? 0)),
+            'partner' => $this->partnerReceiptAccountId(
+                (int) ($data['received_from_id'] ?? 0),
+                $data['partner_transaction_type'] ?? 'current'
+            ),
             'other' => !empty($data['account_id']) ? (int) $data['account_id'] : null,
             default => null,
         };
@@ -582,15 +772,23 @@ class ReceiptVoucherController extends Controller
             ->value('account_id');
     }
 
-    private function partnerCurrentAccountId(int $partnerId): ?int
+    private function partnerReceiptAccountId(int $partnerId, string $transactionType): ?int
     {
         if ($partnerId <= 0) {
             return null;
         }
 
-        return Partner::query()
+        $partner = Partner::query()
             ->where('id', $partnerId)
-            ->value('current_account_id');
+            ->first();
+
+        if (!$partner) {
+            return null;
+        }
+
+        return $transactionType === 'capital'
+            ? $partner->capital_account_id
+            : $partner->current_account_id;
     }
 
     private function generateVoucherNumber(): string

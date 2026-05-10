@@ -13,12 +13,15 @@ class Order extends Model
         'branch_id',
         'warehouse_id',
         'customer_id',
+        'financial_account_id',
+        'payment_method_id',
         'order_date',
         'subtotal',
         'discount_amount',
         'total_price',
         'total_cost',
         'total_profit',
+        'paid_amount',
         'status',
         'payment_status',
         'journal_entry_id',
@@ -32,6 +35,8 @@ class Order extends Model
         'branch_id' => 'integer',
         'warehouse_id' => 'integer',
         'customer_id' => 'integer',
+        'financial_account_id' => 'integer',
+        'payment_method_id' => 'integer',
         'journal_entry_id' => 'integer',
         'user_id' => 'integer',
         'updated_by_user_id' => 'integer',
@@ -41,6 +46,7 @@ class Order extends Model
         'total_price' => 'decimal:2',
         'total_cost' => 'decimal:2',
         'total_profit' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
         'is_deleted' => 'boolean',
     ];
 
@@ -57,6 +63,31 @@ class Order extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function financialAccount(): BelongsTo
+    {
+        return $this->belongsTo(FinancialAccount::class);
+    }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
+    }
+
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function updatedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by_user_id');
     }
 
     public function items(): HasMany

@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue'
-import { useForm } from '@inertiajs/vue3'
+import { computed, ref, watch } from 'vue'
+import { useForm, Link } from '@inertiajs/vue3'
 import EntityFormShell from '@/Components/App/EntityFormShell.vue'
 import FormControl from '@/Components/FormControl.vue'
 import BaseButton from '@/Components/BaseButton.vue'
@@ -10,6 +10,8 @@ const props = defineProps({
   warehouses: Array,
   customers: Array,
   products: Array,
+  financialAccounts: Array,
+  paymentMethods: Array,
 })
 
 const imageLoading = ref(false)
@@ -17,23 +19,37 @@ const imageMessage = ref('')
 const imageError = ref('')
 
 const warehouseOptions = computed(() =>
-  props.warehouses.map(w => ({
+  props.warehouses.map((w) => ({
     value: w.id,
-    label: w.name,
+    label: `${w.name} - ${w.code ?? ''}`,
   }))
 )
 
 const customerOptions = computed(() =>
-  props.customers.map(c => ({
+  props.customers.map((c) => ({
     value: c.id,
-    label: `${c.name} - ${c.phone ?? ''}`,
+    label: `${c.name} - ${c.phone ?? c.code ?? ''}`,
   }))
 )
 
 const productOptions = computed(() =>
-  props.products.map(p => ({
+  props.products.map((p) => ({
     value: p.id,
-    label: `${p.name} - ${p.product_code}`,
+    label: `${p.name} - ${p.product_code ?? ''}`,
+  }))
+)
+
+const financialAccountOptions = computed(() =>
+  props.financialAccounts.map((account) => ({
+    value: account.id,
+    label: `${account.name} - ${account.code ?? ''}`,
+  }))
+)
+
+const paymentMethodOptions = computed(() =>
+  props.paymentMethods.map((method) => ({
+    value: method.id,
+    label: method.name,
   }))
 )
 
@@ -41,9 +57,13 @@ const form = useForm({
   order_number: props.orderNumber,
   warehouse_id: props.warehouses[0]?.id ?? '',
   customer_id: '',
+  financial_account_id: '',
+  payment_method_id: '',
   order_date: new Date().toISOString().slice(0, 10),
   discount_amount: 0,
+  paid_amount: 0,
   payment_status: 'due',
+  status: 'posted',
   notes: '',
   items: [
     {
@@ -55,13 +75,52 @@ const form = useForm({
   ],
 })
 
-const subtotal = computed(() =>
-  form.items.reduce((sum, i) => sum + (i.quantity * i.unit_price), 0)
+const subtotal = computed(() => {
+  return form.items.reduce((sum, item) => {
+    return sum + Number(item.quantity || 0) * Number(item.unit_price || 0)
+  }, 0)
+})
+
+const total = computed(() => {
+  return Math.max(0, subtotal.value - Number(form.discount_amount || 0))
+})
+
+const remainingAmount = computed(() => {
+  return Math.max(0, total.value - Number(form.paid_amount || 0))
+})
+
+const needsPaymentInfo = computed(() => {
+  return ['paid', 'partial'].includes(form.payment_status)
+})
+
+watch(
+  () => form.payment_status,
+  (value) => {
+    if (value === 'paid') {
+      form.paid_amount = total.value
+    }
+
+    if (value === 'due') {
+      form.paid_amount = 0
+      form.financial_account_id = ''
+      form.payment_method_id = ''
+    }
+
+    if (value === 'partial' && Number(form.paid_amount || 0) <= 0) {
+      form.paid_amount = ''
+    }
+  }
 )
 
-const total = computed(() =>
-  subtotal.value - Number(form.discount_amount || 0)
-)
+watch(total, () => {
+  if (form.payment_status === 'paid') {
+    form.paid_amount = total.value
+  }
+
+  if (Number(form.paid_amount || 0) > total.value) {
+    form.paid_amount = total.value
+  }
+})
 
 const addItem = () => {
   form.items.push({
@@ -72,13 +131,13 @@ const addItem = () => {
   })
 }
 
-const removeItem = (i) => {
+const removeItem = (index) => {
   if (form.items.length === 1) return
-  form.items.splice(i, 1)
+  form.items.splice(index, 1)
 }
 
 const productSelected = (index) => {
-  const product = props.products.find(p => p.id == form.items[index].product_id)
+  const product = props.products.find((item) => Number(item.id) === Number(form.items[index].product_id))
   if (!product) return
 
   form.items[index].unit_price = product.current_price ?? 0
@@ -88,51 +147,63 @@ const submit = () => {
   form.post('/orders')
 }
 
-const handleImage = async (e) => {
-  const file = e.target.files?.[0]
+const handleInvoiceImage = async (event) => {
+  const file = event.target.files?.[0]
   if (!file) return
 
   imageLoading.value = true
-  imageError.value = ''
   imageMessage.value = ''
+  imageError.value = ''
 
-  const fd = new FormData()
-  fd.append('image', file)
+  const formData = new FormData()
+  formData.append('image', file)
 
   try {
-    const res = await fetch('/orders/extract-image', {
+    const response = await fetch('/orders/extract-image', {
       method: 'POST',
       headers: {
         'X-CSRF-TOKEN': window.Laravel.csrfToken,
         Accept: 'application/json',
       },
-      body: fd,
+      body: formData,
     })
 
-    const data = await res.json()
+    const data = await response.json()
 
-    if (!data.success) {
-      imageError.value = data.message
+    if (!response.ok || !data.success) {
+      imageError.value = data.message || 'تعذر تحليل الصورة.'
       return
     }
 
-    imageMessage.value = data.message
+    imageMessage.value = data.message || 'تم تحليل الصورة بنجاح.'
 
-    form.order_number = data.draft.order_number || form.order_number
-    form.order_date = data.draft.order_date || form.order_date
-    form.discount_amount = data.draft.discount_amount || 0
+    if (data.draft?.order_number) {
+      form.order_number = data.draft.order_number
+    }
 
-    form.items = data.draft.items.map(i => ({
-      product_id: i.product_id ?? '',
-      quantity: i.quantity ?? 1,
-      unit_price: i.unit_price ?? 0,
-      notes: i.notes ?? '',
-    }))
+    if (data.draft?.order_date) {
+      form.order_date = data.draft.order_date
+    }
 
-  } catch {
-    imageError.value = 'خطأ في تحليل الصورة'
+    if (data.draft?.customer_id) {
+      form.customer_id = data.draft.customer_id
+    }
+
+    form.discount_amount = data.draft?.discount_amount ?? 0
+
+    if (Array.isArray(data.draft?.items) && data.draft.items.length) {
+      form.items = data.draft.items.map((item) => ({
+        product_id: item.product_id ?? '',
+        quantity: item.quantity ?? 1,
+        unit_price: item.unit_price ?? 0,
+        notes: item.notes ?? '',
+      }))
+    }
+  } catch (error) {
+    imageError.value = 'حدث خطأ أثناء رفع الصورة.'
   } finally {
     imageLoading.value = false
+    event.target.value = ''
   }
 }
 </script>
@@ -141,109 +212,271 @@ const handleImage = async (e) => {
   <EntityFormShell
     page-title="إضافة فاتورة بيع"
     hero-badge="المبيعات / إضافة"
-    hero-title="فاتورة بيع جديدة"
-    hero-description="أدخلي بيانات البيع أو استخدمي الذكاء لقراءة الفاتورة من صورة."
+    hero-title="إضافة فاتورة بيع جديدة"
+    hero-description="أدخلي بيانات البيع يدويًا أو ارفعي صورة واضحة للفاتورة لتجهيز مسودة قابلة للمراجعة، مع خصم المخزون بنظام FIFO وتوليد القيود المحاسبية وإنشاء إيصال قبض تلقائي عند وجود دفعة."
     hero-back-href="/orders"
-    hero-gradient-class="bg-gradient-to-br from-indigo-700 via-purple-700 to-slate-900"
-    card-title="بيانات الفاتورة"
+    hero-gradient-class="bg-gradient-to-br from-indigo-800 via-purple-800 to-slate-900"
+    card-title="بيانات فاتورة البيع"
     @submit="submit"
   >
     <div class="space-y-6 p-6">
-
-      <!-- AI IMAGE -->
-      <section class="rounded-2xl bg-indigo-50 p-4">
-        <div class="flex justify-between">
+      <section class="rounded-[28px] border border-dashed border-indigo-300 bg-indigo-50 p-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h3 class="font-black">إدخال من صورة</h3>
-            <p class="text-sm">ارفع صورة فاتورة بيع وسيتم تعبئتها</p>
+            <h3 class="text-lg font-black text-slate-800">الإدخال الذكي من صورة</h3>
+            <p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
+              ارفعي صورة واضحة لفاتورة البيع. سيحاول النظام استخراج رقم الفاتورة، التاريخ، العميل، المنتجات، الكميات والأسعار.
+              راجعي كل البيانات قبل الحفظ لأن الذكاء قد يخطئ في قراءة بعض البنود.
+            </p>
           </div>
 
-          <label class="bg-black text-white px-4 py-2 rounded-xl cursor-pointer">
-            {{ imageLoading ? 'جاري...' : 'رفع صورة' }}
-            <input type="file" class="hidden" @change="handleImage" />
+          <label class="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800">
+            {{ imageLoading ? 'جاري التحليل...' : 'رفع صورة فاتورة' }}
+            <input
+              type="file"
+              class="hidden"
+              accept=".jpg,.jpeg,.png,.webp"
+              :disabled="imageLoading"
+              @change="handleInvoiceImage"
+            />
           </label>
         </div>
 
-        <div v-if="imageMessage" class="text-green-600 mt-2">{{ imageMessage }}</div>
-        <div v-if="imageError" class="text-red-600 mt-2">{{ imageError }}</div>
-      </section>
-
-      <!-- DATA -->
-      <section class="grid md:grid-cols-3 gap-4">
-
-        <FormControl v-model="form.order_number" label="رقم الفاتورة" />
-        <FormControl v-model="form.order_date" type="date" label="التاريخ" />
-
-        <FormControl v-model="form.customer_id" :options="customerOptions" label="العميل" />
-        <FormControl v-model="form.warehouse_id" :options="warehouseOptions" label="المخزن" />
-
-        <FormControl v-model="form.discount_amount" type="number" label="الخصم" />
-
-      </section>
-
-      <!-- ITEMS -->
-      <section class="bg-white rounded-2xl p-4">
-        <div class="flex justify-between mb-3">
-          <h3 class="font-black">البنود</h3>
-          <BaseButton label="إضافة" @click="addItem" />
+        <div v-if="imageMessage" class="mt-3 rounded-2xl bg-emerald-100 px-4 py-3 text-sm font-bold text-emerald-700">
+          {{ imageMessage }}
         </div>
 
-        <table class="w-full text-right">
-          <thead>
-            <tr>
-              <th>منتج</th>
-              <th>كمية</th>
-              <th>سعر</th>
-              <th>الإجمالي</th>
-              <th></th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr v-for="(item,i) in form.items" :key="i">
-              <td>
-                <FormControl
-                  v-model="item.product_id"
-                  :options="productOptions"
-                  @change="productSelected(i)"
-                />
-              </td>
-
-              <td><FormControl v-model="item.quantity" type="number" /></td>
-              <td><FormControl v-model="item.unit_price" type="number" /></td>
-
-              <td>{{ (item.quantity * item.unit_price).toFixed(2) }}</td>
-
-              <td>
-                <BaseButton label="X" color="danger" @click="removeItem(i)" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <!-- TOTAL -->
-      <section class="grid md:grid-cols-3 gap-4">
-        <div class="bg-gray-100 p-4 rounded-xl">
-          <div>الإجمالي</div>
-          <div class="font-black text-xl">{{ subtotal.toFixed(2) }}</div>
-        </div>
-
-        <div class="bg-gray-100 p-4 rounded-xl">
-          <div>الخصم</div>
-          <div class="font-black text-red-600">{{ form.discount_amount }}</div>
-        </div>
-
-        <div class="bg-green-100 p-4 rounded-xl">
-          <div>الصافي</div>
-          <div class="font-black text-green-700 text-xl">{{ total.toFixed(2) }}</div>
+        <div v-if="imageError" class="mt-3 rounded-2xl bg-rose-100 px-4 py-3 text-sm font-bold text-rose-700">
+          {{ imageError }}
         </div>
       </section>
 
+      <section class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div>
+          <label class="mb-2 block text-sm font-black text-slate-700">رقم الفاتورة</label>
+          <FormControl v-model="form.order_number" type="text" />
+          <div v-if="form.errors.order_number" class="mt-1 text-sm text-red-600">{{ form.errors.order_number }}</div>
+        </div>
+
+        <div>
+          <label class="mb-2 block text-sm font-black text-slate-700">تاريخ الفاتورة</label>
+          <FormControl v-model="form.order_date" type="date" />
+          <div v-if="form.errors.order_date" class="mt-1 text-sm text-red-600">{{ form.errors.order_date }}</div>
+        </div>
+
+        <div>
+          <label class="mb-2 block text-sm font-black text-slate-700">العميل</label>
+          <FormControl v-model="form.customer_id" :options="customerOptions" />
+          <p class="mt-1 text-xs font-bold text-slate-400">اتركيه فارغًا لو الفاتورة نقدية لعميل نقدي.</p>
+          <div v-if="form.errors.customer_id" class="mt-1 text-sm text-red-600">{{ form.errors.customer_id }}</div>
+        </div>
+
+        <div>
+          <label class="mb-2 block text-sm font-black text-slate-700">المخزن</label>
+          <FormControl v-model="form.warehouse_id" :options="warehouseOptions" />
+          <div v-if="form.errors.warehouse_id" class="mt-1 text-sm text-red-600">{{ form.errors.warehouse_id }}</div>
+        </div>
+
+        <div>
+          <label class="mb-2 block text-sm font-black text-slate-700"> حالة التحصيل الأولي</label>
+          <select
+            v-model="form.payment_status"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+          >
+           <option value="paid">تحصيل كامل وإنشاء إيصال قبض</option>
+           <option value="due">بدون تحصيل الآن</option>
+           <option value="partial">تحصيل جزئي وإنشاء إيصال قبض</option>
+          </select>
+          <p class="mt-1 text-xs font-bold text-indigo-500">
+         عند إدخال مبلغ مدفوع سيتم إنشاء إيصال قبض تلقائي وربطه بالفاتورة.
+           </p>
+          <div v-if="form.errors.payment_status" class="mt-1 text-sm text-red-600">{{ form.errors.payment_status }}</div>
+        </div>
+
+        <div>
+          <label class="mb-2 block text-sm font-black text-slate-700">الخصم</label>
+          <FormControl v-model="form.discount_amount" type="number" step="0.01" />
+          <div v-if="form.errors.discount_amount" class="mt-1 text-sm text-red-600">{{ form.errors.discount_amount }}</div>
+        </div>
+
+        <div v-if="needsPaymentInfo">
+          <label class="mb-2 block text-sm font-black text-slate-700">الخزينة / البنك</label>
+          <FormControl v-model="form.financial_account_id" :options="financialAccountOptions" />
+          <div v-if="form.errors.financial_account_id" class="mt-1 text-sm text-red-600">{{ form.errors.financial_account_id }}</div>
+        </div>
+
+        <div v-if="needsPaymentInfo">
+          <label class="mb-2 block text-sm font-black text-slate-700">طريقة الدفع</label>
+          <FormControl v-model="form.payment_method_id" :options="paymentMethodOptions" />
+          <div v-if="form.errors.payment_method_id" class="mt-1 text-sm text-red-600">{{ form.errors.payment_method_id }}</div>
+        </div>
+
+        <div v-if="form.payment_status === 'partial'">
+          <label class="mb-2 block text-sm font-black text-slate-700">الدفعة الاولى</label>
+          <FormControl v-model="form.paid_amount" type="number" step="0.01" />
+          <p class="mt-1 text-xs font-bold text-emerald-600">
+         سيتم إنشاء إيصال قبض تلقائي بهذه القيمة.
+         </p>
+          <div v-if="form.errors.paid_amount" class="mt-1 text-sm text-red-600">{{ form.errors.paid_amount }}</div>
+        </div>
+
+        <div class="md:col-span-2 xl:col-span-3">
+          <label class="mb-2 block text-sm font-black text-slate-700">ملاحظات</label>
+          <FormControl v-model="form.notes" type="textarea" />
+          <div v-if="form.errors.notes" class="mt-1 text-sm text-red-600">{{ form.errors.notes }}</div>
+        </div>
+      </section>
+
+      <section class="rounded-[28px] bg-white ring-1 ring-slate-200">
+        <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h3 class="text-lg font-black text-slate-800">بنود الفاتورة</h3>
+            <p class="mt-1 text-xs text-slate-400">اختاري المنتج والكمية وسعر البيع لكل بند. سيتم خصم الكمية من المخزون بنظام FIFO.</p>
+          </div>
+
+          <BaseButton label="إضافة بند" color="primary" @click="addItem" />
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-right">
+            <thead class="bg-slate-50">
+              <tr class="text-sm text-slate-600">
+                <th class="px-4 py-3">المنتج</th>
+                <th class="px-4 py-3">الكمية</th>
+                <th class="px-4 py-3">سعر البيع</th>
+                <th class="px-4 py-3">الإجمالي</th>
+                <th class="px-4 py-3">ملاحظات</th>
+                <th class="px-4 py-3">حذف</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr v-for="(item, index) in form.items" :key="index" class="border-t">
+                <td class="min-w-[280px] px-4 py-3">
+                  <FormControl
+                    v-model="item.product_id"
+                    :options="productOptions"
+                    @change="productSelected(index)"
+                  />
+                  <div v-if="form.errors[`items.${index}.product_id`]" class="mt-1 text-xs text-red-600">
+                    {{ form.errors[`items.${index}.product_id`] }}
+                  </div>
+                </td>
+
+                <td class="min-w-[120px] px-4 py-3">
+                  <FormControl v-model="item.quantity" type="number" step="0.01" />
+                  <div v-if="form.errors[`items.${index}.quantity`]" class="mt-1 text-xs text-red-600">
+                    {{ form.errors[`items.${index}.quantity`] }}
+                  </div>
+                </td>
+
+                <td class="min-w-[140px] px-4 py-3">
+                  <FormControl v-model="item.unit_price" type="number" step="0.01" />
+                  <div v-if="form.errors[`items.${index}.unit_price`]" class="mt-1 text-xs text-red-600">
+                    {{ form.errors[`items.${index}.unit_price`] }}
+                  </div>
+                </td>
+
+                <td class="px-4 py-3 font-black text-slate-800">
+                  {{ (Number(item.quantity || 0) * Number(item.unit_price || 0)).toFixed(2) }}
+                </td>
+
+                <td class="min-w-[180px] px-4 py-3">
+                  <FormControl v-model="item.notes" type="text" />
+                </td>
+
+                <td class="px-4 py-3">
+                  <BaseButton label="حذف" color="danger" small @click="removeItem(index)" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="grid gap-4 md:grid-cols-4">
+        <div class="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+          <div class="text-sm font-bold text-slate-500">الإجمالي قبل الخصم</div>
+          <div class="mt-2 text-2xl font-black text-slate-800">{{ subtotal.toFixed(2) }}</div>
+        </div>
+
+        <div class="rounded-[24px] bg-rose-50 p-5 ring-1 ring-rose-200">
+          <div class="text-sm font-bold text-rose-700">الخصم</div>
+          <div class="mt-2 text-2xl font-black text-rose-700">{{ Number(form.discount_amount || 0).toFixed(2) }}</div>
+        </div>
+
+        <div class="rounded-[24px] bg-indigo-50 p-5 ring-1 ring-indigo-200">
+          <div class="text-sm font-bold text-indigo-700">الصافي</div>
+          <div class="mt-2 text-2xl font-black text-indigo-700">{{ total.toFixed(2) }}</div>
+        </div>
+
+        <div class="rounded-[24px] bg-emerald-50 p-5 ring-1 ring-emerald-200">
+          <div class="text-sm font-bold text-emerald-700">المتبقي دين</div>
+          <div class="mt-2 text-2xl font-black text-emerald-700">{{ remainingAmount.toFixed(2) }}</div>
+        </div>
+      </section>
+
+      <section class="rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
+        <div class="text-sm font-black text-slate-700">معاينة القيد المحاسبي</div>
+
+        <div class="mt-4 grid gap-3 md:grid-cols-3">
+          <div class="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-400">مدين</div>
+            <div class="mt-2 font-black text-emerald-700">
+              حساب العميل
+            </div>
+            <div class="mt-1 text-sm text-slate-500">
+             {{ total.toFixed(2) }} (قيد المبيعات)
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-400">دائن</div>
+            <div class="mt-2 font-black text-rose-700">المبيعات</div>
+            <div class="mt-1 text-sm text-slate-500">
+              {{ total.toFixed(2) }}
+            </div>
+          </div>
+          
+          <div class="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-400">قيد التكلفة</div>
+            <div class="mt-2 font-black text-amber-700">تكلفة المبيعات / المخزون</div>
+            <div class="mt-1 text-sm text-slate-500">
+              يحسب بعد FIFO
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
+      <div
+  v-if="needsPaymentInfo"
+  class="rounded-2xl bg-white p-4 ring-1 ring-emerald-200"
+>
+  <div class="text-xs font-bold text-slate-400">
+    إيصال القبض التلقائي
+  </div>
 
+  <div class="mt-2 font-black text-emerald-700">
+    خزينة / بنك ← عميل
+  </div>
+
+  <div class="mt-1 text-sm text-slate-500">
+    {{ Number(form.paid_amount || 0).toFixed(2) }}
+  </div>
+</div>
     <template #footer>
-      <BaseButton label="حفظ الفاتورة" type="submit" />
+      <div class="flex justify-end gap-3">
+        <Link href="/orders">
+          <BaseButton label="إلغاء" color="light" />
+        </Link>
+
+        <BaseButton
+          label="حفظ فاتورة البيع"
+          color="primary"
+          type="submit"
+          :disabled="form.processing"
+        />
+      </div>
     </template>
   </EntityFormShell>
 </template>

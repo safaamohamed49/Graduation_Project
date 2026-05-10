@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { Link, useForm } from '@inertiajs/vue3'
 import EntityFormShell from '@/Components/App/EntityFormShell.vue'
 import FormControl from '@/Components/FormControl.vue'
@@ -11,6 +11,8 @@ const props = defineProps({
   warehouses: Array,
   suppliers: Array,
   products: Array,
+  financialAccounts: Array,
+  paymentMethods: Array,
 })
 
 const branchOptions = computed(() => props.branches.map((item) => ({
@@ -25,13 +27,27 @@ const warehouseOptions = computed(() => props.warehouses.map((item) => ({
 
 const supplierOptions = computed(() => props.suppliers.map((item) => ({
   value: item.id,
-  label: item.name,
+  label: `${item.name} - ${item.code ?? ''}`,
 })))
 
 const productOptions = computed(() => props.products.map((item) => ({
   value: item.id,
-  label: `${item.name} - ${item.product_code}`,
+  label: `${item.name} - ${item.product_code ?? ''}`,
 })))
+
+const financialAccountOptions = computed(() =>
+  props.financialAccounts.map((account) => ({
+    value: account.id,
+    label: `${account.name} - ${account.code ?? ''}`,
+  }))
+)
+
+const paymentMethodOptions = computed(() =>
+  props.paymentMethods.map((method) => ({
+    value: method.id,
+    label: method.name,
+  }))
+)
 
 const form = useForm({
   invoice_number: props.invoice.invoice_number ?? '',
@@ -43,6 +59,10 @@ const form = useForm({
     : new Date().toISOString().slice(0, 10),
   discount_amount: props.invoice.discount_amount ?? 0,
   total_expenses: props.invoice.total_expenses ?? 0,
+  paid_amount: props.invoice.paid_amount ?? 0,
+  payment_status: props.invoice.payment_status ?? 'due',
+  financial_account_id: props.invoice.financial_account_id ?? '',
+  payment_method_id: props.invoice.payment_method_id ?? '',
   notes: props.invoice.notes ?? '',
   items: (props.invoice.items ?? []).map((item) => ({
     product_id: item.product_id ?? '',
@@ -54,12 +74,52 @@ const form = useForm({
 
 const subtotal = computed(() => {
   return form.items.reduce((sum, item) => {
-    return sum + (Number(item.quantity || 0) * Number(item.price || 0))
+    return sum + Number(item.quantity || 0) * Number(item.price || 0)
   }, 0)
 })
 
 const total = computed(() => {
-  return subtotal.value - Number(form.discount_amount || 0) + Number(form.total_expenses || 0)
+  return Math.max(
+    0,
+    subtotal.value - Number(form.discount_amount || 0) + Number(form.total_expenses || 0)
+  )
+})
+
+const remainingAmount = computed(() => {
+  return Math.max(0, total.value - Number(form.paid_amount || 0))
+})
+
+const needsPaymentInfo = computed(() => {
+  return ['paid', 'partial'].includes(form.payment_status)
+})
+
+watch(
+  () => form.payment_status,
+  (value) => {
+    if (value === 'paid') {
+      form.paid_amount = total.value
+    }
+
+    if (value === 'due') {
+      form.paid_amount = 0
+      form.financial_account_id = ''
+      form.payment_method_id = ''
+    }
+
+    if (value === 'partial' && Number(form.paid_amount || 0) <= 0) {
+      form.paid_amount = ''
+    }
+  }
+)
+
+watch(total, () => {
+  if (form.payment_status === 'paid') {
+    form.paid_amount = total.value
+  }
+
+  if (Number(form.paid_amount || 0) > total.value) {
+    form.paid_amount = total.value
+  }
 })
 
 const addItem = () => {
@@ -93,13 +153,20 @@ const submit = () => {
     page-title="تعديل فاتورة شراء"
     hero-badge="المشتريات / تعديل"
     hero-title="تعديل فاتورة شراء"
-    :hero-description="`تعديل بيانات فاتورة الشراء رقم ${props.invoice.invoice_number}. لا يمكن تعديل الفاتورة إذا استُخدمت كمياتها في فواتير بيع.`"
+    :hero-description="`تعديل بيانات فاتورة الشراء رقم ${props.invoice.invoice_number}. سيتم إلغاء إيصال الصرف التلقائي القديم بقيد عكسي ثم إنشاء إيصال جديد حسب الدفعة الحالية.`"
     hero-back-href="/purchase-invoices"
     hero-gradient-class="bg-gradient-to-br from-amber-500 via-orange-600 to-rose-700"
     card-title="بيانات فاتورة الشراء"
     @submit="submit"
   >
     <div class="space-y-6 p-6">
+      <section class="rounded-[28px] bg-amber-50 p-5 ring-1 ring-amber-200">
+        <h3 class="text-lg font-black text-amber-800">تنبيه مهم</h3>
+        <p class="mt-2 text-sm font-bold leading-7 text-amber-700">
+          تعديل فاتورة الشراء يعيد بناء بنود الفاتورة ودفعات المخزون والقيود المحاسبية. لا يمكن تعديل الفاتورة إذا تم استخدام كمياتها في فواتير بيع. أي دفعة مرتبطة بالفاتورة سيتم إلغاء إيصالها التلقائي بقيد عكسي ثم إنشاء إيصال صرف جديد.
+        </p>
+      </section>
+
       <section class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         <div>
           <label class="mb-2 block text-sm font-black text-slate-700">رقم الفاتورة</label>
@@ -142,18 +209,82 @@ const submit = () => {
         </div>
 
         <div>
+          <label class="mb-2 block text-sm font-black text-slate-700">
+            حالة الصرف الأولي
+          </label>
+
+          <select
+            v-model="form.payment_status"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none transition focus:border-amber-500 focus:ring-4 focus:ring-amber-100"
+          >
+            <option value="paid">صرف كامل وإنشاء إيصال صرف</option>
+            <option value="due">بدون صرف الآن</option>
+            <option value="partial">صرف جزئي وإنشاء إيصال صرف</option>
+          </select>
+
+          <p class="mt-1 text-xs font-bold text-amber-600">
+            تعديل الدفعة سيعيد إنشاء إيصال الصرف التلقائي المرتبط بالفاتورة.
+          </p>
+
+          <div v-if="form.errors.payment_status" class="mt-1 text-sm text-red-600">
+            {{ form.errors.payment_status }}
+          </div>
+        </div>
+
+        <div>
           <label class="mb-2 block text-sm font-black text-slate-700">مصاريف إضافية</label>
-          <FormControl v-model="form.total_expenses" type="number" />
+          <FormControl v-model="form.total_expenses" type="number" step="0.01" />
+          <div v-if="form.errors.total_expenses" class="mt-1 text-sm text-red-600">
+            {{ form.errors.total_expenses }}
+          </div>
         </div>
 
         <div>
           <label class="mb-2 block text-sm font-black text-slate-700">الخصم</label>
-          <FormControl v-model="form.discount_amount" type="number" />
+          <FormControl v-model="form.discount_amount" type="number" step="0.01" />
+          <div v-if="form.errors.discount_amount" class="mt-1 text-sm text-red-600">
+            {{ form.errors.discount_amount }}
+          </div>
         </div>
 
-        <div class="md:col-span-2">
+        <div v-if="needsPaymentInfo">
+          <label class="mb-2 block text-sm font-black text-slate-700">الخزينة / البنك</label>
+          <FormControl v-model="form.financial_account_id" :options="financialAccountOptions" />
+          <div v-if="form.errors.financial_account_id" class="mt-1 text-sm text-red-600">
+            {{ form.errors.financial_account_id }}
+          </div>
+        </div>
+
+        <div v-if="needsPaymentInfo">
+          <label class="mb-2 block text-sm font-black text-slate-700">طريقة الصرف</label>
+          <FormControl v-model="form.payment_method_id" :options="paymentMethodOptions" />
+          <div v-if="form.errors.payment_method_id" class="mt-1 text-sm text-red-600">
+            {{ form.errors.payment_method_id }}
+          </div>
+        </div>
+
+        <div v-if="form.payment_status === 'partial'">
+          <label class="mb-2 block text-sm font-black text-slate-700">
+            الدفعة الأولى للمورد
+          </label>
+
+          <FormControl v-model="form.paid_amount" type="number" step="0.01" />
+
+          <p class="mt-1 text-xs font-bold text-emerald-600">
+            سيتم إنشاء إيصال صرف تلقائي بهذه القيمة بعد حفظ التعديل.
+          </p>
+
+          <div v-if="form.errors.paid_amount" class="mt-1 text-sm text-red-600">
+            {{ form.errors.paid_amount }}
+          </div>
+        </div>
+
+        <div class="md:col-span-2 xl:col-span-3">
           <label class="mb-2 block text-sm font-black text-slate-700">ملاحظات</label>
           <FormControl v-model="form.notes" type="textarea" />
+          <div v-if="form.errors.notes" class="mt-1 text-sm text-red-600">
+            {{ form.errors.notes }}
+          </div>
         </div>
       </section>
 
@@ -161,7 +292,9 @@ const submit = () => {
         <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <h3 class="text-lg font-black text-slate-800">بنود الفاتورة</h3>
-            <p class="mt-1 text-xs text-slate-400">تعديل المنتجات والكميات وأسعار الشراء</p>
+            <p class="mt-1 text-xs text-slate-400">
+              تعديل المنتجات والكميات وأسعار الشراء. سيتم إعادة بناء دفعات المخزون.
+            </p>
           </div>
 
           <BaseButton label="إضافة بند" color="primary" @click="addItem" />
@@ -194,14 +327,14 @@ const submit = () => {
                 </td>
 
                 <td class="min-w-[120px] px-4 py-3">
-                  <FormControl v-model="item.quantity" type="number" />
+                  <FormControl v-model="item.quantity" type="number" step="0.01" />
                   <div v-if="form.errors[`items.${index}.quantity`]" class="mt-1 text-xs text-red-600">
                     {{ form.errors[`items.${index}.quantity`] }}
                   </div>
                 </td>
 
                 <td class="min-w-[140px] px-4 py-3">
-                  <FormControl v-model="item.price" type="number" />
+                  <FormControl v-model="item.price" type="number" step="0.01" />
                   <div v-if="form.errors[`items.${index}.price`]" class="mt-1 text-xs text-red-600">
                     {{ form.errors[`items.${index}.price`] }}
                   </div>
@@ -224,22 +357,90 @@ const submit = () => {
         </div>
       </section>
 
-      <section class="grid gap-4 md:grid-cols-3">
+      <section class="grid gap-4 md:grid-cols-4">
         <div class="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
           <div class="text-sm font-bold text-slate-500">الإجمالي قبل الخصم</div>
-          <div class="mt-2 text-2xl font-black text-slate-800">{{ subtotal.toFixed(2) }}</div>
+          <div class="mt-2 text-2xl font-black text-slate-800">
+            {{ subtotal.toFixed(2) }}
+          </div>
         </div>
 
-        <div class="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-          <div class="text-sm font-bold text-slate-500">المصاريف والخصم</div>
-          <div class="mt-2 text-2xl font-black text-amber-600">
+        <div class="rounded-[24px] bg-amber-50 p-5 ring-1 ring-amber-200">
+          <div class="text-sm font-bold text-amber-700">المصاريف / الخصم</div>
+          <div class="mt-2 text-2xl font-black text-amber-700">
             +{{ Number(form.total_expenses || 0).toFixed(2) }} / -{{ Number(form.discount_amount || 0).toFixed(2) }}
           </div>
         </div>
 
         <div class="rounded-[24px] bg-emerald-50 p-5 ring-1 ring-emerald-200">
           <div class="text-sm font-bold text-emerald-700">الإجمالي النهائي</div>
-          <div class="mt-2 text-2xl font-black text-emerald-700">{{ total.toFixed(2) }}</div>
+          <div class="mt-2 text-2xl font-black text-emerald-700">
+            {{ total.toFixed(2) }}
+          </div>
+        </div>
+
+        <div class="rounded-[24px] bg-rose-50 p-5 ring-1 ring-rose-200">
+          <div class="text-sm font-bold text-rose-700">المتبقي للمورد</div>
+          <div class="mt-2 text-2xl font-black text-rose-700">
+            {{ remainingAmount.toFixed(2) }}
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="needsPaymentInfo"
+        class="rounded-[28px] bg-white p-5 ring-1 ring-emerald-200"
+      >
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 class="text-lg font-black text-emerald-700">
+              إيصال الصرف التلقائي
+            </h3>
+
+            <p class="mt-1 text-sm font-bold text-slate-500">
+              سيتم إلغاء الإيصال التلقائي القديم بقيد عكسي ثم إنشاء إيصال صرف جديد بعد حفظ التعديل.
+            </p>
+          </div>
+
+          <div class="rounded-2xl bg-emerald-50 px-4 py-3 text-center ring-1 ring-emerald-200">
+            <div class="text-xs font-bold text-emerald-600">
+              قيمة الصرف
+            </div>
+
+            <div class="mt-1 text-2xl font-black text-emerald-700">
+              {{ Number(form.paid_amount || 0).toFixed(2) }}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-5 grid gap-4 md:grid-cols-2">
+          <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div class="text-xs font-bold text-slate-400">
+              قيد فاتورة الشراء
+            </div>
+
+            <div class="mt-2 font-black text-emerald-700">
+              المخزون ← المورد
+            </div>
+
+            <div class="mt-1 text-sm text-slate-500">
+              {{ total.toFixed(2) }}
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
+            <div class="text-xs font-bold text-emerald-600">
+              قيد الصرف
+            </div>
+
+            <div class="mt-2 font-black text-emerald-700">
+              المورد ← خزينة / بنك
+            </div>
+
+            <div class="mt-1 text-sm text-slate-500">
+              {{ Number(form.paid_amount || 0).toFixed(2) }}
+            </div>
+          </div>
         </div>
       </section>
     </div>

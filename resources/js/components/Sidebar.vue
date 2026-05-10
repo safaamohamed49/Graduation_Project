@@ -234,13 +234,12 @@ const can = (permission) => {
     تقرير الأصول
   </Link>
         <Link
-          v-if="can('reports.view')"
-          href="/reports"
-          class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
-          :class="currentUrl.startsWith('/reports') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
-        >
-          التقارير
-        </Link>
+  href="/reports"
+  class="block rounded-2xl px-4 py-3 text-base font-semibold transition"
+  :class="currentUrl.startsWith('/reports') ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'"
+>
+  التقارير
+</Link>
 
       </div>
     </nav>

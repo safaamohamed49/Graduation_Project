@@ -30,7 +30,23 @@ class Customer extends Model
         'is_locked' => 'boolean',
     ];
 
-    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
-    public function orders(): HasMany { return $this->hasMany(Order::class); }
-    public function returnInvoices(): HasMany { return $this->hasMany(ReturnInvoice::class); }
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    public function returnInvoices(): HasMany
+    {
+        return $this->hasMany(ReturnInvoice::class);
+    }
 }
